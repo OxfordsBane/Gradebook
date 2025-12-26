@@ -6,12 +6,11 @@ from copy import copy
 import io
 import zipfile
 
-st.set_page_config(page_title="Gradebook Otomasyonu Pro", layout="wide")
+st.set_page_config(page_title="Gradebook Pro v3.1", layout="wide")
 
-# --- YARDIMCI FONKSİYONLAR ---
-
+# --- STİL KOPYALAMA ---
 def copy_style(source_cell, target_cell):
-    """Hücre stilini (Font, Kenarlık, Dolgu, Kilit, Hizalama) kopyalar."""
+    """Hücre stilini birebir kopyalar."""
     if source_cell.has_style:
         target_cell.font = copy(source_cell.font)
         target_cell.border = copy(source_cell.border)
@@ -20,216 +19,203 @@ def copy_style(source_cell, target_cell):
         target_cell.protection = copy(source_cell.protection)
         target_cell.alignment = copy(source_cell.alignment)
 
-def find_table_boundaries(ws):
+# --- TABLO SINIRLARINI BULMA ---
+def find_available_rows(ws):
     """
-    Tablonun başını (Header) ve sonunu (Footer/Boşluk) bulur.
-    Böylece aradaki boş 30 satırı tespit edip silebiliriz.
+    Şablondaki boş veri satırlarının başlangıcını ve bitişini bulur.
+    Örn: 5. satırdan başlayıp 35. satıra kadar boş hücreler varsa bunları tespit eder.
     """
-    header_row = 0
-    start_row = 5 # Varsayılan güvenlik
-    end_row = ws.max_row
+    start_row = 0
+    end_row = 0
     
-    # 1. Başlangıcı Bul: "Student Number" veya "Index" içeren satırı ara
+    # 1. Başlangıcı Bul (Header'dan sonraki ilk satır)
     for row in ws.iter_rows(min_row=1, max_row=15):
         for cell in row:
             if cell.value and isinstance(cell.value, str):
-                if "Student" in cell.value or "Index" in cell.value or "Numara" in cell.value:
-                    header_row = cell.row
-                    start_row = header_row + 1 # Veri başlığın bir altından başlar
+                if "Index" in cell.value or "Student" in cell.value or "No" in str(cell.value):
+                    start_row = cell.row + 1
                     break
-        if header_row > 0: break
+        if start_row > 0: break
     
-    # 2. Bitişi Bul: start_row'dan aşağı inip tablonun nerede bittiğine bak.
-    # Genelde "Total", "Average", "Advisor" yazar veya kenarlık biter.
-    # Biz basitçe: İlk boş veya özel kelime içeren satırı bulalım.
+    if start_row == 0: start_row = 5 # Bulamazsa varsayılan
     
-    current_row = start_row
-    max_search = 100 # Sonsuz döngü engeli
+    # 2. Bitişi Bul (Advisor/Total yazısına kadar olan boşluk)
+    # start_row'dan aşağı iniyoruz.
+    current = start_row
+    max_look = 200
     
-    while current_row < start_row + max_search:
-        # Satırdaki A, B, C sütunlarına bak
-        cell_a = ws.cell(row=current_row, column=1).value
-        cell_b = ws.cell(row=current_row, column=2).value
+    while current < start_row + max_look:
+        # A ve B sütununu kontrol et
+        val_a = ws.cell(row=current, column=1).value
+        val_b = ws.cell(row=current, column=2).value
+        val_str = str(val_a) if val_a else "" + str(val_b) if val_b else ""
         
-        # Eğer hücrede "Advisor", "Total", "Average" varsa veya hücre tamamen boşsa ve border yoksa
-        val_str = str(cell_a) if cell_a else ""
+        # Bitiş sinyalleri
         if "Advisor" in val_str or "Total" in val_str or "Ortalama" in val_str:
-            end_row = current_row
+            end_row = current - 1
             break
         
-        # Eğer şablonda 30 tane boş satır varsa, bunların hepsi boştur.
-        # Ancak biz şablondaki o boşlukları silmek istiyoruz.
-        # O yüzden manuel bir bitiş belirleyicisinden ziyade,
-        # Kullanıcı şablonuna sadık kalarak, dolu olan son satırı bulup gerisini temizlemek daha güvenli.
+        # Eğer satırın alt kenarlığı kalınsa bu da bir bitiş işaretidir (Opsiyonel)
+        # Şimdilik sadece metin tabanlı bitiş yapıyoruz.
         
-        current_row += 1
+        current += 1
         
+    if end_row == 0: end_row = start_row + 29 # Bulamazsa 30 satır varsay
+    
     return start_row, end_row
 
-def update_headers_and_names(wb, class_name, module_name, advisor_name):
-    # Sheet ismini ve başlıkları güncelle (Önceki mantıkla aynı)
-    main_ws = wb.worksheets[0]
+# --- BAŞLIKLARI GÜNCELLEME ---
+def update_headers(ws, class_name, module_name, advisor_name):
     try:
-        safe_title = "".join([c for c in class_name if c not in r"[]:*?\/"])
-        main_ws.title = safe_title
+        ws.title = "".join([c for c in class_name if c not in r"[]:*?\/"])
     except: pass
 
-    for row in main_ws.iter_rows(min_row=1, max_row=10, max_col=20):
+    for row in ws.iter_rows(min_row=1, max_row=10, max_col=20):
         for cell in row:
             if not cell.value: continue
-            val_str = str(cell.value)
-            if "GRADEBOOK" in val_str and "MODULE" in val_str:
+            val = str(cell.value)
+            if "GRADEBOOK" in val and "MODULE" in val:
                 cell.value = f"{class_name} GRADEBOOK - {module_name}"
-            if "Advisor:" in val_str:
+            if "Advisor:" in val:
                 cell.value = f"Advisor: {advisor_name}"
 
+# --- ANA İŞLEM ---
 def process_class(template_bytes, class_name, students_df, col_map, module_name):
     wb = openpyxl.load_workbook(io.BytesIO(template_bytes))
     
-    # Advisor
-    try: advisor_name = students_df.iloc[0][col_map['advisor']]
-    except: advisor_name = "Belirtilmedi"
+    try: advisor = students_df.iloc[0][col_map['advisor']]
+    except: advisor = ""
 
-    update_headers_and_names(wb, class_name, module_name, advisor_name)
+    # Sadece ilk sheetteki başlıkları güncelle (Genelde main sheet)
+    update_headers(wb.worksheets[0], class_name, module_name, advisor)
 
-    # --- TABLO İŞLEME MANTIĞI ---
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         
-        # 1. Tablonun sınırlarını belirle
-        start_row, footer_row = find_table_boundaries(ws)
-        
-        # Şablondaki mevcut boş satır sayısı (Örn: 5. satırdan 35. satıra kadar boşsa 30 satır)
-        # footer_row, "Advisor" yazan satır olsun. Veri alanı: start_row -> footer_row - 1
-        
-        # --- RESIZE STRATEJİSİ ---
-        # En temiz yöntem: 
-        # 1. İlk veri satırını (start_row) koru (Referans Satırı).
-        # 2. Referans satırının ALTINDAKİ, footer'a kadar olan tüm boş satırları SİL.
-        # 3. Öğrenci sayısı kadar yeni satır EKLE.
-        
-        rows_to_delete = footer_row - (start_row + 1)
-        if rows_to_delete > 0:
-            ws.delete_rows(start_row + 1, amount=rows_to_delete)
-            
-        # Şu an tablomuzda sadece 1 satır veri alanı kaldı (start_row).
-        # Şimdi ihtiyacımız olan kadarını ekleyeceğiz.
-        
+        # 1. Mevcut Boşlukları Tespit Et
+        start_row, end_row = find_available_rows(ws)
+        available_slots = end_row - start_row + 1
         num_students = len(students_df)
-        rows_to_add = num_students - 1 
         
-        if rows_to_add > 0:
-            # start_row'un altına ekle
-            ws.insert_rows(start_row + 1, amount=rows_to_add)
+        # --- DURUM 1: ÖĞRENCİ SAYISI AZ (FAZLALIKLARI SİL) ---
+        if num_students <= available_slots:
+            # Önce öğrencileri mevcut satırlara yaz
+            limit_row = start_row + num_students
             
-        # --- VERİ VE FORMÜL DÖKÜMÜ ---
-        max_col = ws.max_column
-        
+            # Geriye kalan boş satırları sil (Tabloyu yukarı çek)
+            rows_to_delete = available_slots - num_students
+            if rows_to_delete > 0:
+                # Silme işlemini öğrencilerin bittiği yerin altından yap
+                ws.delete_rows(limit_row, amount=rows_to_delete)
+
+        # --- DURUM 2: ÖĞRENCİ SAYISI ÇOK (UZATMA YAP) ---
+        else:
+            rows_to_add = num_students - available_slots
+            # Mevcutların sonuna ekleme yap
+            ws.insert_rows(end_row + 1, amount=rows_to_add)
+            
+            # Yeni eklenen satırlara STİL KOPYALA
+            # Stil kaynağı olarak "end_row"u (mevcut son boş satırı) kullanıyoruz.
+            # Bu satır genelde "orta" stilindedir (ince kenarlık), header değildir.
+            ref_row = end_row
+            max_col = ws.max_column
+            
+            for i in range(rows_to_add):
+                new_row_idx = end_row + 1 + i
+                for col in range(1, max_col + 1):
+                    source = ws.cell(row=ref_row, column=col)
+                    target = ws.cell(row=new_row_idx, column=col)
+                    
+                    copy_style(source, target)
+                    
+                    # Formül Kaydırma
+                    if source.data_type == 'f':
+                        try:
+                            target.value = Translator(
+                                source.value, source.coordinate
+                            ).translate_formula(target.coordinate)
+                        except:
+                            target.value = source.value
+
+        # --- VERİLERİ YAZMA DÖNGÜSÜ ---
+        # Artık satır sayısı tam ayarlandı, sırayla yazabiliriz.
         for i, (_, student) in enumerate(students_df.iterrows()):
             current_row = start_row + i
             
-            # Stil ve Formül Kopyalama (İlk satırdan diğerlerine)
-            if i > 0:
-                for col in range(1, max_col + 1):
-                    source_cell = ws.cell(row=start_row, column=col) # Referans: İlk satır
-                    target_cell = ws.cell(row=current_row, column=col) # Hedef: Yeni satır
-                    
-                    copy_style(source_cell, target_cell)
-                    
-                    # --- FORMÜL KAYDIRMA (TRANSLATOR) ---
-                    if source_cell.data_type == 'f':
-                        try:
-                            # Formülü yeni konuma göre tercüme et (B3 -> B4)
-                            target_cell.value = Translator(
-                                source_cell.value, 
-                                origin=source_cell.coordinate
-                            ).translate_formula(target_cell.coordinate)
-                        except:
-                            # Çeviremezse olduğu gibi kopyala (fallback)
-                            target_cell.value = source_cell.value
-
-            # Öğrenci Bilgileri (Formül değilse yaz)
-            # Not: Eğer şablonda B sütununda formül varsa üzerine yazmamalıyız.
-            # Genelde No, Ad, Soyad sütunları boş olur, formül olmaz.
-            
+            # No, Ad, Soyad yaz
             ws.cell(row=current_row, column=1).value = i + 1
             ws.cell(row=current_row, column=2).value = student[col_map['no']]
             ws.cell(row=current_row, column=3).value = student[col_map['name']]
             ws.cell(row=current_row, column=4).value = student[col_map['surname']]
 
-    # Dosya Kayıt İşlemleri (Aynı)
+    # KAYDETME İŞLEMLERİ
     main_io = io.BytesIO()
     wb.save(main_io)
     main_io.seek(0)
     
-    sheets_to_keep = ["MidTerm", "MET", "Midterm"]
-    sheets_to_delete = [s for s in wb.sheetnames if s not in sheets_to_keep]
-    for s in sheets_to_delete: del wb[s]
-        
-    checker_io = io.BytesIO()
-    if len(wb.sheetnames) > 0:
+    # Checker temizliği
+    for s in [s for s in wb.sheetnames if s not in ["MidTerm", "MET", "Midterm"]]:
+        del wb[s]
+    
+    checker_io = io.BytesIO() if len(wb.sheetnames) > 0 else None
+    if checker_io:
         wb.save(checker_io)
         checker_io.seek(0)
-    else:
-        checker_io = None
 
     return main_io, checker_io
 
 # --- ARAYÜZ ---
-st.title("🎓 Otomatik Gradebook Pro v3.0")
-st.markdown("**Yenilikler:** Akıllı Tablo Boyutlandırma + Formül Kaydırma")
+st.title("🎓 Gradebook Pro v3.1 (Smart Fill)")
+st.markdown("Format bozulmadan mevcut satırları doldurur, fazlalığı siler veya uzatır.")
 
-tabs = st.tabs(["🚀 Oluştur", "ℹ️ Format"])
+tabs = st.tabs(["İşlem", "Nasıl Çalışır?"])
 
 with tabs[0]:
-    st.header("1. Ayarlar")
-    module_input = st.text_input("Modül İsmi", "MODULE 2")
+    col_set1, col_set2 = st.columns(2)
+    module_input = col_set1.text_input("Modül", "MODULE 2")
     
-    st.header("2. Liste ve Şablon")
     student_file = st.file_uploader("Öğrenci Listesi", type=["xlsx"])
-
     if student_file:
         df = pd.read_excel(student_file)
-        st.info("Sütun Eşleştirme:")
-        cols = st.columns(5)
-        class_col = cols[0].selectbox("Sınıf", df.columns, index=0)
-        no_col = cols[1].selectbox("Numara", df.columns, index=1 if len(df.columns)>1 else 0)
-        name_col = cols[2].selectbox("Ad", df.columns, index=2 if len(df.columns)>2 else 0)
-        surname_col = cols[3].selectbox("Soyad", df.columns, index=3 if len(df.columns)>3 else 0)
-        advisor_col = cols[4].selectbox("Advisor", df.columns, index=4 if len(df.columns)>4 else 0)
         
-        col_mapping = {'class': class_col, 'no': no_col, 'name': name_col, 'surname': surname_col, 'advisor': advisor_col}
-
-        selected_classes = st.multiselect("Sınıfları Seçin", df[class_col].unique())
+        c1, c2, c3, c4, c5 = st.columns(5)
+        col_map = {
+            'class': c1.selectbox("Sınıf", df.columns, index=0),
+            'no': c2.selectbox("No", df.columns, index=1),
+            'name': c3.selectbox("Ad", df.columns, index=2),
+            'surname': c4.selectbox("Soyad", df.columns, index=3),
+            'advisor': c5.selectbox("Advisor", df.columns, index=4 if len(df.columns)>4 else 0)
+        }
         
-        if selected_classes:
-            st.warning("Master Şablon (Formüllü ve Boş 1 Satır Örnekli)")
-            template_file = st.file_uploader("Şablon Yükle", type=["xlsx"])
-            
-            if template_file and st.button("Başlat", type="primary"):
-                progress = st.progress(0)
-                zip_buffer = io.BytesIO()
-                template_bytes = template_file.getvalue()
+        classes = st.multiselect("Sınıflar", df[col_map['class']].unique())
+        
+        if classes:
+            template_file = st.file_uploader("Şablon (30 satırlık boş hali)", type=["xlsx"])
+            if template_file and st.button("Başlat"):
+                zip_buf = io.BytesIO()
+                temp_bytes = template_file.getvalue()
                 
-                with zipfile.ZipFile(zip_buffer, "w") as zf:
-                    for i, sinif in enumerate(selected_classes):
-                        class_df = df[df[class_col] == sinif].reset_index(drop=True)
-                        main, checker = process_class(template_bytes, sinif, class_df, col_mapping, module_input)
+                with zipfile.ZipFile(zip_buf, "w") as zf:
+                    prog = st.progress(0)
+                    for i, cls in enumerate(classes):
+                        sub_df = df[df[col_map['class']] == cls].reset_index(drop=True)
+                        main, chk = process_class(temp_bytes, cls, sub_df, col_map, module_input)
                         
-                        zf.writestr(f"{sinif}/{sinif} GRADEBOOK.xlsx", main.getvalue())
-                        if checker:
-                            zf.writestr(f"{sinif}/{sinif} 1st Checker.xlsx", checker.getvalue())
-                            zf.writestr(f"{sinif}/{sinif} 2nd Checker.xlsx", checker.getvalue())
-                        
-                        progress.progress((i + 1) / len(selected_classes))
+                        zf.writestr(f"{cls}/{cls} GRADEBOOK.xlsx", main.getvalue())
+                        if chk:
+                            zf.writestr(f"{cls}/{cls} 1st Checker.xlsx", chk.getvalue())
+                            zf.writestr(f"{cls}/{cls} 2nd Checker.xlsx", chk.getvalue())
+                        prog.progress((i+1)/len(classes))
                 
-                st.success("İşlem Tamam!")
-                st.download_button("ZIP İndir", zip_buffer.getvalue(), "Gradebooks_Pro.zip", "application/zip")
+                st.download_button("ZIP İndir", zip_buf.getvalue(), "Gradebooks.zip", "application/zip")
 
 with tabs[1]:
     st.markdown("""
-    ### Önemli: Şablon Nasıl Olmalı?
-    1. **Tek Satır Örnek:** Şablonunuzda öğrenci listesi için **en az 1 satır** (Örn: 5. Satır) ayrılmış olmalı.
-    2. **Fazlalıklar:** Şablonunuzda 30 boş satır olsa bile program bunları **otomatik silip** sınıf mevcudu kadar (örn: 18) satır açacaktır.
-    3. **Bitiş Sınırı:** Program tablonun bittiğini anlamak için "Advisor", "Total" gibi yazıları veya boş satırları arar.
+    **Format Koruma Mantığı:**
+    Bu versiyon şablonu silip baştan yapmaz.
+    1. Şablonunuzdaki 30 (veya kaç taneyse) boş satırı bulur.
+    2. Öğrencileri bu satırlara yazar.
+    3. Eğer öğrenci sayısı azsa (örn: 20), kalan 10 boş satırı siler.
+       *Böylece en üstteki ve en alttaki özel çizgiler bozulmaz.*
+    4. Eğer öğrenci sayısı fazlaysa (örn: 35), sona 5 satır ekler ve stili **son satırdan** kopyalar.
     """)
