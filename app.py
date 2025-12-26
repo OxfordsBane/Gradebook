@@ -6,12 +6,15 @@ from copy import copy
 import io
 import zipfile
 
-st.set_page_config(page_title="Gradebook Pro v6.0 (Safe Zone Fix)", layout="wide")
+st.set_page_config(page_title="Gradebook Pro v7.0 (Formula Clone)", layout="wide")
 
-# --- HÜCRE KLONLAMA (STİL + FORMÜL) ---
+# --- HÜCRE KLONLAMA (EN KRİTİK FONKSİYON) ---
 def clone_cell(source_cell, target_cell):
-    """Bir hücrenin tüm genetiğini (stil, formül, kilit) kopyalar."""
-    # 1. Stil
+    """
+    Kaynak hücredeki STİLİ ve FORMÜLÜ hedef hücreye kopyalar.
+    Formülleri (örn: A5 -> A6) otomatik kaydırır.
+    """
+    # 1. Stil Kopyala
     if source_cell.has_style:
         target_cell.font = copy(source_cell.font)
         target_cell.border = copy(source_cell.border)
@@ -20,154 +23,124 @@ def clone_cell(source_cell, target_cell):
         target_cell.protection = copy(source_cell.protection)
         target_cell.alignment = copy(source_cell.alignment)
     
-    # 2. Formül (Translate)
+    # 2. Formül veya Değer Kopyala
     if source_cell.data_type == 'f':
+        # Hücre formül ise (Örn: ='Main'!B5)
         try:
+            # Formülü yeni satıra göre güncelle (='Main'!B6)
             target_cell.value = Translator(
                 source_cell.value, source_cell.coordinate
             ).translate_formula(target_cell.coordinate)
         except:
+            # Çevrilemezse aynısını yapıştır
             target_cell.value = source_cell.value
+    else:
+        # Formül değilse, şablondaki sabit bir metin olabilir (Örn: "0" veya "-")
+        # Bunu da kopyalayalım ki şablon bozulmasın.
+        # ANCAK: Eğer kaynak hücre boşsa kopyalama yapma.
+        if source_cell.value is not None:
+             target_cell.value = source_cell.value
 
-# --- TABLO SINIRLARINI BULMA (GELİŞMİŞ) ---
-def find_table_boundaries(ws):
+# --- TABLO YAPISINI ÇÖZME ---
+def analyze_structure(ws):
     """
-    Tablonun başlangıcını (Header) ve bitişini (Footer/Bottom)
-    garantili bir şekilde bulmaya çalışır.
+    Header (Başlangıç) ve Footer (Bitiş) satırlarını tespit eder.
     """
-    start_row = 6 # Varsayılan güvenlik
+    start_row = 6 # Varsayılan
     
-    # 1. Header'ı Bul (Index, No, Student)
-    header_found = False
+    # 1. Header'ı Bul
     for row in ws.iter_rows(min_row=1, max_row=20):
         for cell in row:
             if cell.value and isinstance(cell.value, str):
                 val = cell.value.lower()
-                if "index" in val or "student" in val or "number" in val:
-                    start_row = cell.row + 1 # Veri, başlığın altından başlar
-                    header_found = True
+                if "index" in val or "student" in val or "number" in val or "no" in val:
+                    start_row = cell.row + 1
                     break
-        if header_found: break
+        if start_row > 6: break
         
-    # 2. Footer'ı Bul (Bitiş Noktası)
-    # start_row'dan itibaren aşağı inip "Tablo nerede bitiyor?" diye bakacağız.
-    # Strateji: "Advisor/Total" bulursak orasıdır. Bulamazsak dolu olan son satırdır.
-    
+    # 2. Footer'ı Bul (Total/Advisor/Ortalama)
+    # start_row'dan aşağı inip arıyoruz.
     current_row = start_row
-    max_search = 300
-    footer_row = start_row + 30 # Hiçbir şey bulamazsak varsayılan 30 satır
-    found_keyword = False
+    footer_row = 0
     
-    # Anahtar kelimeler
-    keywords = ["total", "advisor", "average", "toplam", "ortalama", "checker", "grade", "score", "imza", "signature"]
+    # Geniş anahtar kelime havuzu
+    keywords = [
+        "total", "advisor", "average", "toplam", "ortalama", 
+        "checker", "grade", "score", "imza", "signature", "final", "met"
+    ]
     
-    while current_row < start_row + max_search:
-        # A, B, C sütunlarına bak (Genelde yazılar buradadır)
-        val_str = ""
-        for c in range(1, 5):
+    # Maksimum 300 satır aşağı bak
+    while current_row < start_row + 300:
+        # Satırın ilk 5 sütunundaki metinleri birleştirip ara
+        row_text = ""
+        for c in range(1, 6):
             val = ws.cell(row=current_row, column=c).value
-            val_str += str(val).lower() if val else ""
-            
-        # 1. Kriter: Kelime Eşleşmesi
-        if any(k in val_str for k in keywords):
+            if val: row_text += str(val).lower()
+        
+        if any(k in row_text for k in keywords):
             footer_row = current_row
-            found_keyword = True
             break
-            
+        
+        # Güvenlik: Eğer satırın kenarlığı yoksa ve boşsa, tablo bitmiş olabilir.
+        # Ama şimdilik keyword araması en güvenlisi.
+        
         current_row += 1
         
-    # Eğer kelime bulamadıysak (Örn: Role-play sheet'inde total yazmıyorsa)
-    # Görsel/Dolu Satır kontrolü yapalım:
-    if not found_keyword:
-        # Tersten yukarı çıkalım (max_row'dan geriye)
-        # Ama tüm sheet dolu olabilir, o yüzden start_row'dan aşağı inip
-        # "Art arda 5 tane tamamen boş ve kenarlıksız satır" görünce duralım.
+    if footer_row == 0:
+        footer_row = start_row + 30 # Bulamazsa varsayılan
         
-        check_row = start_row
-        empty_streak = 0
-        last_data_row = start_row
-        
-        while check_row < start_row + 100:
-            is_empty = True
-            # Satırın ilk 10 hücresine bak
-            for c in range(1, 11):
-                cell = ws.cell(row=check_row, column=c)
-                if cell.value or (cell.border and (cell.border.top.style or cell.border.bottom.style)):
-                    is_empty = False
-                    break
-            
-            if is_empty:
-                empty_streak += 1
-            else:
-                empty_streak = 0
-                last_data_row = check_row
-                
-            if empty_streak > 5: # 5 satır boşluk varsa tablo bitmiştir
-                break
-            check_row += 1
-            
-        footer_row = last_data_row + 1
-
-    # Güvenlik Kontrolü: Footer header'dan çok yakınsa (hatalıysa) düzelt
-    if footer_row <= start_row + 1:
-        footer_row = start_row + 30
-
     return start_row, footer_row
 
-# --- SHEET DÜZENLEME ---
-def process_sheet_resize(ws, num_students):
-    start_row, footer_row = find_table_boundaries(ws)
+# --- RESIZE VE POPULATE ---
+def process_sheet(ws, num_students):
+    start_row, footer_row = analyze_structure(ws)
     
-    # Mevcut Kapasite (Footer ile Header arası)
+    # Mevcut Kapasite
     current_capacity = footer_row - start_row
+    
+    # Hedeflenen
     needed_rows = num_students
     
-    # --- DURUM 1: EKLEME YAP (INSERT) ---
+    # --- DURUM A: EKLEME YAP (INSERT) ---
     if needed_rows > current_capacity:
         rows_to_add = needed_rows - current_capacity
         
-        # KRİTİK NOKTA: Footer'ın tam üstüne değil, "1 satır üstüne" ekleyelim.
-        # Böylece footer ile veri arasına girmemiş oluruz, footer'ı aşağı iteriz.
-        # Sizin "25. satır" taktiği.
+        # Ekleme Noktası: Footer'ın tam üstü.
+        insert_pos = footer_row
         
-        insert_pos = footer_row - 1 
+        # DNA Kaynağı (Source Row): Footer'ın bir üstündeki satır (Mevcut son boş satır)
+        # Bu satırda formüller ve kenarlıklar doğrudur.
+        source_row_idx = footer_row - 1
         
-        # Eğer tablo çok küçükse (1-2 satırsa) hata olmasın
-        if insert_pos < start_row: insert_pos = start_row
-        
+        # 1. Satırları Ekle (Formatsız gelir)
         ws.insert_rows(insert_pos, amount=rows_to_add)
         
-        # Stil Referansı: Insert yaptığımız yerin hemen üstündeki satır
-        ref_row_idx = insert_pos - 1
-        # Eğer üst satır header ise (tablo boşsa), mecburen insert_pos'un kendisini (yeni boş satır) değil, start_row'u referans al
-        if ref_row_idx < start_row: ref_row_idx = start_row
-        
-        # Kopyalama Döngüsü
+        # 2. Kaynak Satırı Yeni Satırlara Kopyala
         max_col = ws.max_column
         for i in range(rows_to_add):
             target_row_idx = insert_pos + i
             for col in range(1, max_col + 1):
-                source = ws.cell(row=ref_row_idx, column=col)
-                target = ws.cell(row=target_row_idx, column=col)
-                clone_cell(source, target)
+                source_cell = ws.cell(row=source_row_idx, column=col)
+                target_cell = ws.cell(row=target_row_idx, column=col)
+                clone_cell(source_cell, target_cell)
                 
-    # --- DURUM 2: SİLME YAP (DELETE) ---
+    # --- DURUM B: SİLME YAP (DELETE) ---
     elif needed_rows < current_capacity:
         rows_to_delete = current_capacity - needed_rows
         # Silmeye sondan başla (Footer'ın hemen üstünden yukarı doğru)
-        # delete_start = footer_row - rows_to_delete
-        # Daha güvenli: Verilerin bittiği yerden başla
         delete_pos = start_row + needed_rows
         ws.delete_rows(delete_pos, amount=rows_to_delete)
         
     return start_row
 
-# --- BAŞLIK GÜNCELLEME ---
-def update_headers(ws, class_name, module_name, advisor_name):
+# --- BAŞLIKLARI GÜNCELLE ---
+def update_info(ws, class_name, module_name, advisor_name):
+    # Sheet ismi (Sadece 1. sayfa)
     if ws.parent.index(ws) == 0:
         try: ws.title = "".join([c for c in class_name if c not in r"[]:*?\/"])
         except: pass
-        
+
+    # Smart Search
     for row in ws.iter_rows(min_row=1, max_row=10, max_col=20):
         for cell in row:
             if not cell.value: continue
@@ -178,39 +151,44 @@ def update_headers(ws, class_name, module_name, advisor_name):
                 cell.value = f"Advisor: {advisor_name}"
 
 # --- ANA İŞLEM ---
-def process_workbook_v6(template_bytes, class_name, students_df, col_map, module_name):
+def process_workbook(template_bytes, class_name, students_df, col_map, module_name):
     wb = openpyxl.load_workbook(io.BytesIO(template_bytes))
     
     try: advisor = students_df.iloc[0][col_map['advisor']]
     except: advisor = ""
 
-    # Tüm Sheetleri İşle
+    # TÜM SHEETLER İÇİN
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
-        update_headers(ws, class_name, module_name, advisor)
         
-        # Resize ve Formül Kopyalama
-        data_start = process_sheet_resize(ws, len(students_df))
+        # Başlık ve Advisor
+        update_info(ws, class_name, module_name, advisor)
         
-        # Sadece Main Sheet'e İsim Yaz
+        # Boyutlandır ve Formülleri Kopyala
+        data_start = process_sheet(ws, len(students_df))
+        
+        # SADECE MAIN SHEET (İLK SAYFA) İÇİN VERİ GİR
+        # Diğer sayfalar 'process_sheet' içindeki clone_cell sayesinde
+        # Main Sheet'ten formülle beslenecek.
         if wb.index(ws) == 0:
             for i, (_, student) in enumerate(students_df.iterrows()):
                 r = data_start + i
-                # Formül olmayan hücrelere veri bas
+                
+                # Sadece formül OLMAYAN hücrelere yaz (Main sheet'te isimler manueldir)
                 if ws.cell(r, 1).data_type != 'f': ws.cell(r, 1).value = i + 1
                 if ws.cell(r, 2).data_type != 'f': ws.cell(r, 2).value = student[col_map['no']]
                 if ws.cell(r, 3).data_type != 'f': ws.cell(r, 3).value = student[col_map['name']]
                 if ws.cell(r, 4).data_type != 'f': ws.cell(r, 4).value = student[col_map['surname']]
 
-    # Kaydet
+    # KAYDETME
     main_io = io.BytesIO()
     wb.save(main_io)
     main_io.seek(0)
     
-    # Checker
+    # Checker (Temizlik)
     keeps = ["MidTerm", "MET", "Midterm"]
-    dels = [s for s in wb.sheetnames if s not in keeps]
-    for s in dels: del wb[s]
+    to_del = [s for s in wb.sheetnames if s not in keeps]
+    for s in to_del: del wb[s]
     
     chk_io = None
     if len(wb.sheetnames) > 0:
@@ -220,13 +198,16 @@ def process_workbook_v6(template_bytes, class_name, students_df, col_map, module
         
     return main_io, chk_io
 
-# --- UI ---
-st.title("🎓 Gradebook Pro v6.0 (Safe Zone)")
-st.markdown("Footer (Advisor/Total) satırını koruyarak, araya güvenli ekleme yapar.")
+# --- UI KISMI ---
+st.title("🎓 Gradebook Pro v7.0 (Kesin Çözüm)")
+st.markdown("""
+Bu versiyon, diğer sheetlerdeki formüllerin (Örn: `='Main'!A5`) silinmemesini ve 
+yeni eklenen satırlara (Örn: `='Main'!A6`) olarak kopyalanmasını garanti eder.
+""")
 
 c1, c2 = st.columns(2)
-mod_in = c1.text_input("Modül", "MODULE 2")
-st_file = st.file_uploader("Öğrenci Listesi", type=["xlsx"])
+mod_in = c1.text_input("Modül İsmi", "MODULE 2")
+st_file = st.file_uploader("Öğrenci Listesi (Excel)", type=["xlsx"])
 
 if st_file:
     df = pd.read_excel(st_file)
@@ -239,24 +220,24 @@ if st_file:
         'advisor': cols[4].selectbox("Advisor", df.columns, 4 if len(df.columns)>4 else 0)
     }
     
-    cls_list = st.multiselect("Sınıflar", df[col_map['class']].unique())
-    if cls_list:
-        tmp_file = st.file_uploader("Master Şablon", type=["xlsx"])
+    classes = st.multiselect("Sınıflar", df[col_map['class']].unique())
+    if classes:
+        tmp_file = st.file_uploader("Şablon (Formülleri Açık)", type=["xlsx"])
         if tmp_file and st.button("Başlat"):
             z_buf = io.BytesIO()
             t_bytes = tmp_file.getvalue()
             
             with zipfile.ZipFile(z_buf, "w") as zf:
                 bar = st.progress(0)
-                for i, c in enumerate(cls_list):
+                for i, c in enumerate(classes):
                     sub_df = df[df[col_map['class']] == c].reset_index(drop=True)
-                    m, ch = process_workbook_v6(t_bytes, c, sub_df, col_map, mod_in)
+                    m, ch = process_workbook(t_bytes, c, sub_df, col_map, mod_in)
                     
                     zf.writestr(f"{c}/{c} GRADEBOOK.xlsx", m.getvalue())
                     if ch:
                         zf.writestr(f"{c}/{c} 1st Checker.xlsx", ch.getvalue())
                         zf.writestr(f"{c}/{c} 2nd Checker.xlsx", ch.getvalue())
-                    bar.progress((i+1)/len(cls_list))
+                    bar.progress((i+1)/len(classes))
             
-            st.success("İşlem Tamam!")
-            st.download_button("İndir", z_buf.getvalue(), "Gradebook_v6.zip", "application/zip")
+            st.success("Tamamlandı!")
+            st.download_button("Dosyaları İndir", z_buf.getvalue(), "Gradebook_Final.zip", "application/zip")
