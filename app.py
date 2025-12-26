@@ -26,28 +26,24 @@ def update_headers_and_names(wb, class_name, module_name, advisor_name):
     # 1. EN SOLDAKİ SHEET İSMİNİ DEĞİŞTİRME (MAIN SHEET)
     main_ws = wb.worksheets[0]
     try:
-        # Excel sheet isimlerinde yasaklı karakterleri temizle (: \ / ? * [ ])
+        # Excel sheet isimlerinde yasaklı karakterleri temizle
         safe_title = "".join([c for c in class_name if c not in r"[]:*?\/"])
         main_ws.title = safe_title
     except Exception as e:
         print(f"Sheet ismi değiştirilemedi: {e}")
 
     # 2. HÜCRE İÇERİKLERİNİ GÜNCELLEME (Smart Search)
-    # İlk 10 satır ve ilk 20 sütunu tarayıp anahtar kelimeleri ararız.
-    # Bu sayede şablonun formatı değişse bile kod çalışır.
-    
     for row in main_ws.iter_rows(min_row=1, max_row=10, max_col=20):
         for cell in row:
             if not cell.value: continue
             
             val_str = str(cell.value)
             
-            # Başlık Değişimi: "A1.02 GRADEBOOK - MODULE 2" formatını yakala
+            # Başlık Değişimi
             if "GRADEBOOK" in val_str and "MODULE" in val_str:
-                # Format: [SINIF] GRADEBOOK - [MODÜL]
                 cell.value = f"{class_name} GRADEBOOK - {module_name}"
             
-            # Advisor Değişimi: "Advisor:" içeren hücreyi yakala
+            # Advisor Değişimi
             if "Advisor:" in val_str:
                 cell.value = f"Advisor: {advisor_name}"
 
@@ -57,26 +53,20 @@ def process_class(template_bytes, class_name, students_df, col_map, module_name)
     """
     wb = openpyxl.load_workbook(io.BytesIO(template_bytes))
     
-    # --- ADVISOR BİLGİSİNİ AL ---
-    # Sınıf listesinde Advisor sütunundaki ilk değeri alıyoruz (Hepsi aynı varsayılır)
+    # Advisor bilgisini al
     try:
         advisor_name = students_df.iloc[0][col_map['advisor']]
     except:
         advisor_name = "Belirtilmedi"
 
-    # --- BAŞLIKLARI VE İSİMLERİ GÜNCELLE ---
+    # Başlıkları Güncelle
     update_headers_and_names(wb, class_name, module_name, advisor_name)
 
-    # --- ÖĞRENCİLERİ EKLEME ---
+    # Öğrencileri Ekle
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
+        start_row = 5 # Varsayılan başlangıç satırı
         
-        # Referans satırı (Varsayım: 5. satırda veri başlıyor)
-        start_row = 5 
-        
-        # Satır sayısını bulmak için basit bir kontrol (Opsiyonel: Dinamik yapılabilir)
-        # Şimdilik sabit 5. satır varsayımıyla devam ediyoruz.
-
         num_students = len(students_df)
         rows_to_add = num_students - 1 
         
@@ -99,7 +89,7 @@ def process_class(template_bytes, class_name, students_df, col_map, module_name)
                         target_cell.value = source_cell.value 
 
             # Veri Yazma
-            ws.cell(row=current_row, column=1).value = i + 1  # Index
+            ws.cell(row=current_row, column=1).value = i + 1
             ws.cell(row=current_row, column=2).value = student[col_map['no']]
             ws.cell(row=current_row, column=3).value = student[col_map['name']]
             ws.cell(row=current_row, column=4).value = student[col_map['surname']]
@@ -109,7 +99,7 @@ def process_class(template_bytes, class_name, students_df, col_map, module_name)
     wb.save(main_io)
     main_io.seek(0)
     
-    # Checker Dosyaları (MidTerm ve MET dışındakileri sil)
+    # Checker Dosyaları (Temizlik)
     sheets_to_keep = ["MidTerm", "MET", "Midterm"]
     sheets_to_delete = [s for s in wb.sheetnames if s not in sheets_to_keep]
     
@@ -127,10 +117,10 @@ def process_class(template_bytes, class_name, students_df, col_map, module_name)
 
 # --- ARAYÜZ (UI) ---
 
-st.title("🎓 Otomatik Gradebook v2.0")
+st.title("🎓 Otomatik Gradebook v2.1")
 st.markdown("Sınıf isimlerini, modül bilgisini ve advisor ismini otomatik güncelleyen sürüm.")
 
-tabs = st.tabs(["🚀 Gradebook Oluştur", "ℹ️ Bilgi"])
+tabs = st.tabs(["🚀 Gradebook Oluştur", "ℹ️ Bilgi ve Format"])
 
 with tabs[0]:
     # --- ADIM 1: GENEL AYARLAR ---
@@ -159,7 +149,6 @@ with tabs[0]:
         with col4:
             surname_col = st.selectbox("Soyad", df.columns, index=3 if len(df.columns)>3 else 0)
         with col5:
-            # Advisor seçimi - Eğer listede yoksa kullanıcı uyarılır
             advisor_col = st.selectbox("Advisor (Hoca)", df.columns, index=4 if len(df.columns)>4 else 0)
             
         col_mapping = {
@@ -192,45 +181,45 @@ with tabs[0]:
                     
                     for idx, sinif in enumerate(selected_classes):
                         status_text.text(f"İşleniyor: {sinif}...")
-                        
                         class_df = df[df[class_col] == sinif].reset_index(drop=True)
-                        
-                        # Process fonksiyonuna module_name'i de gönderiyoruz
                         main_io, checker_io = process_class(
                             template_bytes, sinif, class_df, col_mapping, module_input
                         )
-                        
-                        # Dosyaları ZIP'e ekle
                         zf.writestr(f"{sinif}/{sinif} GRADEBOOK.xlsx", main_io.getvalue())
-                        
                         if checker_io:
                             zf.writestr(f"{sinif}/{sinif} 1st Checker Add-up.xlsx", checker_io.getvalue())
                             zf.writestr(f"{sinif}/{sinif} 2nd Checker Add-up.xlsx", checker_io.getvalue())
-                        
                         progress_bar.progress((idx + 1) / total_classes)
                 
                 status_text.success("✅ Tüm işlemler tamamlandı!")
-                st.download_button(
-                    "📥 ZIP İndir", 
-                    zip_buffer.getvalue(), 
-                    "Gradebooks_v2.zip", 
-                    "application/zip"
-                )
+                st.download_button("📥 ZIP İndir", zip_buffer.getvalue(), "Gradebooks_Paket.zip", "application/zip")
 
 with tabs[1]:
+    st.header("📋 Sınıf Listesi Formatı")
     st.markdown("""
-    ### Yeni Özellikler Nasıl Çalışır?
+    Programın düzgün çalışabilmesi için yükleyeceğiniz **Öğrenci Listesi Excel Dosyası** aşağıdaki bilgileri içermelidir.
+    
+    Sütun başlıkları (Header) birebir aynı olmak zorunda değildir (program içinde eşleştirme yapabilirsiniz), ancak **içerik** şu şekilde olmalıdır:
+    
+    | Sınıf (Class) | Numara (ID) | Ad (Name) | Soyad (Surname) | Advisor (Hoca) |
+    | :--- | :--- | :--- | :--- | :--- |
+    | A1.01 | 250101 | Ali | Yılmaz | Ahmet Hoca |
+    | A1.01 | 250102 | Ayşe | Demir | Ahmet Hoca |
+    | B2.05 | 240500 | Veli | Kaya | Mehmet Hoca |
+    
+    ---
+    
+    ### Program Özellikleri
     
     **1. Başlık Değişimi:**
-    * Program, şablonun ilk sayfasında içinde **"GRADEBOOK"** ve **"MODULE"** kelimeleri geçen hücreyi arar.
-    * Bulduğunda içeriği `[SINIF ADI] GRADEBOOK - [GİRDİĞİNİZ MODÜL]` olarak değiştirir.
-    * *Örnek:* "A1.02 GRADEBOOK - MODULE 2"
+    * Program, şablonun içinde **"GRADEBOOK"** ve **"MODULE"** kelimeleri geçen hücreyi bulur.
+    * Orayı otomatik olarak `[SINIF ADI] GRADEBOOK - [GİRDİĞİNİZ MODÜL]` formatına çevirir.
     
     **2. Advisor (Hoca) İsmi:**
-    * Yüklediğiniz sınıf listesinde hocaların isminin olduğu bir sütun olmalıdır.
-    * Program şablonda **"Advisor:"** yazan hücreyi arar ve hocanın ismini oraya yazar.
-    * *Örnek:* "Advisor: Kasım Burak Çavuşoğlu"
+    * Listede belirttiğiniz "Advisor" sütunundaki ismi alır.
+    * Şablonda **"Advisor:"** yazan hücrenin yanına veya içine bu ismi yazar.
     
-    **3. Sheet İsmi:**
-    * Excel'i açtığınızda en altta görünen sekme ismi (Sheet Name), otomatik olarak sınıf kodu (Örn: A1.02) yapılır.
+    **3. Add-up (Checker) Dosyaları:**
+    * Otomatik olarak her sınıf için **1st Checker** ve **2nd Checker** dosyaları üretilir.
+    * Bu dosyalarda sadece *MidTerm* ve *MET* sayfaları bırakılır, diğerleri silinir.
     """)
