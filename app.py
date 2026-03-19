@@ -2,6 +2,7 @@ import streamlit as st
 import openpyxl
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
+from openpyxl.styles import Font
 from openpyxl.worksheet.cell_range import MultiCellRange
 import re
 import io
@@ -13,13 +14,10 @@ def get_class_info_from_sheet(sheet):
     start_reading = False
     
     for row in sheet.iter_rows(values_only=True):
-        # Öğrenci listesinin başladığı başlık satırını bul
         if row[1] == "STUDENT NUMBER":
             start_reading = True
-            # Aynı satırın içindeki Advisor bilgisini bul
             for cell_val in row:
                 if cell_val and isinstance(cell_val, str) and "Advisor" in cell_val:
-                    # "Advisor: Esra" formatından sadece "Esra" kısmını al
                     advisor_name = cell_val.split(":")[-1].strip()
                     break
             continue
@@ -58,6 +56,7 @@ def get_current_student_rows(ws, start_row=3):
 def adjust_template_rows_and_tables(ws, num_students):
     start_row = 3
     current_rows = get_current_student_rows(ws, start_row)
+    original_last_student_row = start_row + current_rows - 1
     
     action_row_idx = start_row + (current_rows // 2)
     if action_row_idx <= start_row:
@@ -83,8 +82,7 @@ def adjust_template_rows_and_tables(ws, num_students):
     for table in ws.tables.values():
         ref = table.ref
         min_col, min_row, max_col, max_row = range_boundaries(ref)
-        original_data_end = start_row + current_rows - 1
-        offset = max_row - original_data_end
+        offset = max_row - original_last_student_row
         if offset < 0:
             offset = 0
         new_table_max_row = last_student_row + offset
@@ -101,6 +99,7 @@ def adjust_template_rows_and_tables(ws, num_students):
                 except:
                     target_cell.value = master_cell.value
 
+    # Koşullu Biçimlendirmeleri (CF) Mavi Kısımdan Tamamen Temizleme İşlemi
     if hasattr(ws.conditional_formatting, '_cf_rules'):
         new_cf_rules = {}
         for sqref, rules in ws.conditional_formatting._cf_rules.items():
@@ -118,25 +117,41 @@ def adjust_template_rows_and_tables(ws, num_students):
                 
                 if match_range:
                     scol, srow, ecol, erow = match_range.groups()
-                    if int(srow) <= start_row and int(erow) >= start_row:
+                    srow_int, erow_int = int(srow), int(erow)
+                    
+                    # Eğer kural orijinal mavi kısımdan başlıyorsa ÇÖPE AT
+                    if srow_int > original_last_student_row:
+                        continue 
+                        
+                    # Kural öğrencileri kapsıyorsa tam son öğrencide KES
+                    if srow_int <= start_row and erow_int >= start_row:
                         new_ranges.append(f"{scol}{start_row}:{ecol}{last_student_row}")
                     else:
                         new_ranges.append(rng)
+                        
                 elif match_cell:
                     col, row = match_cell.groups()
-                    if int(row) == start_row:
+                    row_int = int(row)
+                    
+                    # Eğer hücre orijinal mavi kısımda ise ÇÖPE AT
+                    if row_int > original_last_student_row:
+                        continue
+                        
+                    if row_int == start_row:
                         new_ranges.append(f"{col}{start_row}:{col}{last_student_row}")
                     else:
                         new_ranges.append(rng)
                 else:
                     new_ranges.append(rng)
             
-            new_sqref_str = " ".join(new_ranges)
-            try:
-                new_sqref = MultiCellRange(new_sqref_str)
-                new_cf_rules[new_sqref] = rules
-            except:
-                new_cf_rules[sqref] = rules
+            # Eğer new_ranges boş kalmadıysa (yani kural tamamen çöpe atılmadıysa) kuralı ekle
+            if new_ranges:
+                new_sqref_str = " ".join(new_ranges)
+                try:
+                    new_sqref = MultiCellRange(new_sqref_str)
+                    new_cf_rules[new_sqref] = rules
+                except:
+                    new_cf_rules[sqref] = rules
                 
         ws.conditional_formatting._cf_rules = new_cf_rules
 
@@ -150,11 +165,16 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         
     # İLK SAYFAYA ÖZEL İŞLEMLER
     first_sheet = wb.worksheets[0]
-    
     first_sheet.title = class_name
-    first_sheet["A1"] = f"{class_name} - {module_name}"
     
-    # Advisor ismini şablondaki yerine yerleştir
+    # A1 Başlığına Sınıf ve Modül adını yazdır ve Puntosunu 20 Yap
+    first_sheet["A1"] = f"{class_name} - {module_name}"
+    current_font = first_sheet["A1"].font
+    if current_font:
+        first_sheet["A1"].font = Font(name=current_font.name, size=20, bold=current_font.bold, italic=current_font.italic, color=current_font.color)
+    else:
+        first_sheet["A1"].font = Font(size=20, bold=True)
+    
     advisor_found = False
     for row in first_sheet.iter_rows():
         for cell in row:
@@ -213,7 +233,6 @@ if st.button("Generate Gradebooks"):
                     
                     if level in templates and templates[level]:
                         ws = class_wb[sheet_name]
-                        # Hem öğrencileri hem de danışman bilgisini çekiyoruz
                         students, advisor_name = get_class_info_from_sheet(ws)
                         
                         if not students:
