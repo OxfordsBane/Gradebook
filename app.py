@@ -39,7 +39,6 @@ def get_current_student_rows(ws, start_row=3):
     count = 0
     for r in range(start_row, ws.max_row + 1):
         val = ws.cell(row=r, column=1).value
-        # Formülle gelen sayılar veya doğrudan girilen rakamlar için kontrol
         if val is not None and str(val).strip() != "" and str(val).strip() != "0":
             count += 1
         else:
@@ -97,14 +96,12 @@ def adjust_template_rows_and_tables(ws, num_students):
 
     last_student_row = start_row + num_students - 1
 
-    # Formüllerdeki referansları güncelle
     if offset != 0:
         for row in ws.iter_rows():
             for cell in row:
                 if cell.data_type == 'f' and cell.value:
                     cell.value = shift_formula_rows(str(cell.value), action_row_idx, offset)
 
-    # Tablo boyutlarını güncelle
     for table in ws.tables.values():
         ref = table.ref
         min_col, min_row, max_col, max_row = range_boundaries(ref)
@@ -114,7 +111,6 @@ def adjust_template_rows_and_tables(ws, num_students):
         new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
-    # Formülleri alt satırlara uyarla
     for r in range(start_row + 1, last_student_row + 1):
         for col in range(1, ws.max_column + 1):
             master_cell = ws.cell(row=start_row, column=col)
@@ -126,7 +122,6 @@ def adjust_template_rows_and_tables(ws, num_students):
                 except:
                     target_cell.value = master_cell.value
 
-    # Mavi Alana sarkan eski kuralları temizle
     if hasattr(ws.conditional_formatting, '_cf_rules'):
         new_cf_rules = {}
         for sqref, rules in ws.conditional_formatting._cf_rules.items():
@@ -183,25 +178,22 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
     wb.template = False 
     
-    # 1. TÜM SAYFALARIN SATIRLARINI VE TABLOLARINI AYARLA
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
         last_student_row = adjust_template_rows_and_tables(ws, len(students))
         
-        # SADECE İLK SAYFA HARİCİNDEKİ SAYFALARA E SÜTUNU CF KURALINI EKLE
         if i > 0:
-            cfvo1 = FormatObject(type='num', val=0)   # Kırmızı Aşağı Ok (< 45)
-            cfvo2 = FormatObject(type='num', val=45)  # Turuncu Sağ-Aşağı Ok (>= 45)
-            cfvo3 = FormatObject(type='num', val=60)  # Sarı Sağ Ok (>= 60)
-            cfvo4 = FormatObject(type='num', val=70)  # Sarı-Yeşil Sağ-Yukarı Ok (>= 70)
-            cfvo5 = FormatObject(type='num', val=85)  # Yeşil Yukarı Ok (>= 85)
+            cfvo1 = FormatObject(type='num', val=0)   
+            cfvo2 = FormatObject(type='num', val=45)  
+            cfvo3 = FormatObject(type='num', val=60)  
+            cfvo4 = FormatObject(type='num', val=70)  
+            cfvo5 = FormatObject(type='num', val=85)  
             
             icon_set = IconSet(iconSet='5Arrows', cfvo=[cfvo1, cfvo2, cfvo3, cfvo4, cfvo5])
             rule = Rule(type='iconSet', iconSet=icon_set)
             
             ws.conditional_formatting.add(f"E3:E{last_student_row}", rule)
         
-    # 2. İLK SAYFAYA ÖZEL İŞLEMLER (Öğrenci Verisi, Başlık, Advisor)
     first_sheet = wb.worksheets[0]
     first_sheet.title = class_name
     
@@ -211,6 +203,9 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         first_sheet["A1"].font = Font(name=current_font.name, size=20, bold=current_font.bold, italic=current_font.italic, color=current_font.color)
     else:
         first_sheet["A1"].font = Font(size=20, bold=True)
+        
+    for i in range(1, len(wb.worksheets)):
+        wb.worksheets[i]["A1"] = f"='{class_name}'!A1"
     
     advisor_found = False
     for row in first_sheet.iter_rows():
@@ -222,7 +217,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         if advisor_found:
             break
     
-    # Öğrenci listesini SADECE ilk sayfaya yazıyoruz
     start_row = 3
     for i, student in enumerate(students):
         first_sheet.cell(row=start_row + i, column=1, value=student["index"])
