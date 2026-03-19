@@ -7,13 +7,23 @@ import re
 import io
 import zipfile
 
-def get_students_from_sheet(sheet):
+def get_class_info_from_sheet(sheet):
     students = []
+    advisor_name = ""
     start_reading = False
+    
     for row in sheet.iter_rows(values_only=True):
+        # Öğrenci listesinin başladığı başlık satırını bul
         if row[1] == "STUDENT NUMBER":
             start_reading = True
+            # Aynı satırın içindeki Advisor bilgisini bul
+            for cell_val in row:
+                if cell_val and isinstance(cell_val, str) and "Advisor" in cell_val:
+                    # "Advisor: Esra" formatından sadece "Esra" kısmını al
+                    advisor_name = cell_val.split(":")[-1].strip()
+                    break
             continue
+            
         if start_reading:
             if not row[0] or not str(row[0]).strip().isdigit():
                 break
@@ -23,13 +33,10 @@ def get_students_from_sheet(sheet):
                 "name": row[2],
                 "surname": row[3]
             })
-    return students
+            
+    return students, advisor_name
 
 def get_current_student_rows(ws, start_row=3):
-    """
-    A sütunundaki (Index) sıra numaralarını sayarak şablonun o sayfasındaki 
-    gerçek satır sayısını dinamik olarak bulur.
-    """
     count = 0
     for r in range(start_row, ws.max_row + 1):
         val = ws.cell(row=r, column=1).value
@@ -41,13 +48,12 @@ def get_current_student_rows(ws, start_row=3):
     if count > 0:
         return count
         
-    # Eğer A sütununda numara yoksa Excel tablosu sınırlarına bak
     for table in ws.tables.values():
         min_col, min_row, max_col, max_row = range_boundaries(table.ref)
         if min_row <= start_row <= max_row:
             return max_row - start_row + 1
             
-    return 30 # Hiçbiri yoksa varsayılan
+    return 30
 
 def adjust_template_rows_and_tables(ws, num_students):
     start_row = 3
@@ -57,7 +63,6 @@ def adjust_template_rows_and_tables(ws, num_students):
     if action_row_idx <= start_row:
         action_row_idx = start_row + 1
     
-    # Satır Ekleme veya Silme
     if num_students > current_rows:
         rows_to_add = num_students - current_rows
         ws.insert_rows(action_row_idx, amount=rows_to_add)
@@ -75,7 +80,6 @@ def adjust_template_rows_and_tables(ws, num_students):
 
     last_student_row = start_row + num_students - 1
 
-    # Tablo referans sınırlarını güncelleme
     for table in ws.tables.values():
         ref = table.ref
         min_col, min_row, max_col, max_row = range_boundaries(ref)
@@ -86,7 +90,6 @@ def adjust_template_rows_and_tables(ws, num_students):
         new_table_max_row = last_student_row + offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
-    # Formülleri uyarla
     for r in range(start_row + 1, last_student_row + 1):
         for col in range(1, ws.max_column + 1):
             master_cell = ws.cell(row=start_row, column=col)
@@ -98,7 +101,6 @@ def adjust_template_rows_and_tables(ws, num_students):
                 except:
                     target_cell.value = master_cell.value
 
-    # Koşullu Biçimlendirmeleri (CF) Öğrenci Satırlarında Sınırlandır (Mavi Alana Taşmasını Engelle)
     if hasattr(ws.conditional_formatting, '_cf_rules'):
         new_cf_rules = {}
         for sqref, rules in ws.conditional_formatting._cf_rules.items():
@@ -117,7 +119,6 @@ def adjust_template_rows_and_tables(ws, num_students):
                 if match_range:
                     scol, srow, ecol, erow = match_range.groups()
                     if int(srow) <= start_row and int(erow) >= start_row:
-                        # Kural öğrenci listesindeyse, KESİNLİKLE son öğrenci satırında bitir!
                         new_ranges.append(f"{scol}{start_row}:{ecol}{last_student_row}")
                     else:
                         new_ranges.append(rng)
@@ -139,23 +140,31 @@ def adjust_template_rows_and_tables(ws, num_students):
                 
         ws.conditional_formatting._cf_rules = new_cf_rules
 
-def process_class_template(template_bytes, class_name, students, module_name):
+def process_class_template(template_bytes, class_name, students, module_name, advisor_name):
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
     wb.template = False 
     
-    # Tüm sekmelerdeki tabloları öğrenci mevcuduna göre ayarla
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         adjust_template_rows_and_tables(ws, len(students))
         
     # İLK SAYFAYA ÖZEL İŞLEMLER
     first_sheet = wb.worksheets[0]
-    # 1. Sekmenin adını sınıf kodu yap
+    
     first_sheet.title = class_name
-    # 2. A1 hücresine (Başlık) Sınıf Kodu ve Modül Adını yazdır
     first_sheet["A1"] = f"{class_name} - {module_name}"
     
-    # Öğrenci verilerini ilk sayfaya yazdır
+    # Advisor ismini şablondaki yerine yerleştir
+    advisor_found = False
+    for row in first_sheet.iter_rows():
+        for cell in row:
+            if cell.value and isinstance(cell.value, str) and "Advisor" in cell.value:
+                cell.value = f"Advisor: {advisor_name}"
+                advisor_found = True
+                break
+        if advisor_found:
+            break
+    
     start_row = 3
     for i, student in enumerate(students):
         first_sheet.cell(row=start_row + i, column=1, value=student["index"])
@@ -172,7 +181,6 @@ st.title("Excel Gradebook Generator")
 
 class_lists_file = st.file_uploader("Class Lists (Excel)", type=["xlsx"])
 
-# Modül Adı Girişi
 module_name = st.text_input("Module Name (e.g., Module 3)", value="Module 3")
 
 st.subheader("Gradebook Templates")
@@ -205,13 +213,13 @@ if st.button("Generate Gradebooks"):
                     
                     if level in templates and templates[level]:
                         ws = class_wb[sheet_name]
-                        students = get_students_from_sheet(ws)
+                        # Hem öğrencileri hem de danışman bilgisini çekiyoruz
+                        students, advisor_name = get_class_info_from_sheet(ws)
                         
                         if not students:
                             continue
                             
-                        # process_class_template fonksiyonuna module_name değişkenini de gönderiyoruz
-                        file_data = process_class_template(templates[level].getvalue(), sheet_name, students, module_name)
+                        file_data = process_class_template(templates[level].getvalue(), sheet_name, students, module_name, advisor_name)
                         zip_file.writestr(f"{level}/{sheet_name} Gradebook.xlsx", file_data)
 
             zip_buffer.seek(0)
