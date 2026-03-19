@@ -2,8 +2,6 @@ import streamlit as st
 import openpyxl
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
-from openpyxl.worksheet.cell_range import MultiCellRange
-import re
 import io
 import zipfile
 
@@ -29,6 +27,7 @@ def adjust_template_rows_and_tables(ws, num_students):
     start_row = 3
     current_rows = 30 
     
+    # Tablo boyutunu dinamik bul
     for table in ws.tables.values():
         min_col, min_row, max_col, max_row = range_boundaries(table.ref)
         if min_row <= start_row <= max_row:
@@ -77,47 +76,11 @@ def adjust_template_rows_and_tables(ws, num_students):
                 except:
                     target_cell.value = master_cell.value
 
-    if hasattr(ws.conditional_formatting, '_cf_rules'):
-        new_cf_rules = {}
-        for sqref, rules in ws.conditional_formatting._cf_rules.items():
-            if hasattr(sqref, 'ranges'):
-                sqref_str = " ".join([rng.coord for rng in sqref.ranges])
-            else:
-                sqref_str = str(sqref)
-            
-            sqref_str = sqref_str.replace("<MultiCellRange [", "").replace("]>", "")
-            
-            new_ranges = []
-            for rng in sqref_str.split():
-                match_range = re.match(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$", rng)
-                match_cell = re.match(r"^([A-Z]+)(\d+)$", rng)
-                
-                if match_range:
-                    scol, srow, ecol, erow = match_range.groups()
-                    if int(srow) <= start_row and int(erow) >= start_row:
-                        new_ranges.append(f"{scol}{start_row}:{ecol}{last_student_row}")
-                    else:
-                        new_ranges.append(rng)
-                elif match_cell:
-                    col, row = match_cell.groups()
-                    if int(row) == start_row:
-                        new_ranges.append(f"{col}{start_row}:{col}{last_student_row}")
-                    else:
-                        new_ranges.append(rng)
-                else:
-                    new_ranges.append(rng)
-            
-            new_sqref_str = " ".join(new_ranges)
-            try:
-                new_sqref = MultiCellRange(new_sqref_str)
-                new_cf_rules[new_sqref] = rules
-            except:
-                new_cf_rules[sqref] = rules
-                
-        ws.conditional_formatting._cf_rules = new_cf_rules
-
 def process_class_template(template_bytes, class_name, students):
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
+    
+    # CRITICAL FIX: Dosyanın şablon (xltx) kimliğini iptal et, normal xlsx olarak işaretle
+    wb.template = False 
     
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
