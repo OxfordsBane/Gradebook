@@ -53,6 +53,24 @@ def get_current_student_rows(ws, start_row=3):
             
     return 30
 
+def shift_formula_rows(formula_str, threshold_row, offset):
+    """
+    Formül metinlerindeki hücre referanslarını (Örn: E$33, A15) tespit eder
+    ve eğer eşik değerinden büyükse (yani mavi alandaysa) satır sayısını offset kadar kaydırır.
+    """
+    if not formula_str or not isinstance(formula_str, str) or not formula_str.startswith('='):
+        return formula_str
+        
+    def repl(match):
+        prefix = match.group(1)
+        row_num = int(match.group(2))
+        if row_num >= threshold_row:
+            return f"{prefix}{row_num + offset}"
+        return match.group(0)
+        
+    # Sadece geçerli hücre referanslarını eşleştirir (Örn: E33, E$33, $E$33)
+    return re.sub(r'(?<![A-Za-z])(\$?[A-Za-z]{1,3}\$?)(\d+)\b', repl, formula_str)
+
 def adjust_template_rows_and_tables(ws, num_students):
     start_row = 3
     current_rows = get_current_student_rows(ws, start_row)
@@ -62,9 +80,11 @@ def adjust_template_rows_and_tables(ws, num_students):
     if action_row_idx <= start_row:
         action_row_idx = start_row + 1
     
+    offset = 0
     if num_students > current_rows:
         rows_to_add = num_students - current_rows
         ws.insert_rows(action_row_idx, amount=rows_to_add)
+        offset = rows_to_add
         
         for r in range(action_row_idx, action_row_idx + rows_to_add):
             for col in range(1, ws.max_column + 1):
@@ -76,18 +96,28 @@ def adjust_template_rows_and_tables(ws, num_students):
     elif num_students < current_rows:
         rows_to_delete = current_rows - num_students
         ws.delete_rows(action_row_idx, amount=rows_to_delete)
+        offset = -rows_to_delete
 
     last_student_row = start_row + num_students - 1
 
+    # Formüllerdeki $ işaretli mutlak referansları ve mavi alan formüllerini topluca güncelle
+    if offset != 0:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.data_type == 'f' and cell.value:
+                    cell.value = shift_formula_rows(str(cell.value), action_row_idx, offset)
+
+    # Excel Tablo referans sınırlarını güncelle
     for table in ws.tables.values():
         ref = table.ref
         min_col, min_row, max_col, max_row = range_boundaries(ref)
-        offset = max_row - original_last_student_row
-        if offset < 0:
-            offset = 0
-        new_table_max_row = last_student_row + offset
+        table_offset = max_row - original_last_student_row
+        if table_offset < 0:
+            table_offset = 0
+        new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
+    # Düzeltilmiş (Usta) Formülleri tüm öğrencilere uyarlayarak kopyala
     for r in range(start_row + 1, last_student_row + 1):
         for col in range(1, ws.max_column + 1):
             master_cell = ws.cell(row=start_row, column=col)
@@ -99,7 +129,7 @@ def adjust_template_rows_and_tables(ws, num_students):
                 except:
                     target_cell.value = master_cell.value
 
-    # Koşullu Biçimlendirmeleri (CF) Mavi Kısımdan Tamamen Temizleme İşlemi
+    # Koşullu Biçimlendirmeleri (CF) Mavi Alandan Tamamen Temizleme İşlemi
     if hasattr(ws.conditional_formatting, '_cf_rules'):
         new_cf_rules = {}
         for sqref, rules in ws.conditional_formatting._cf_rules.items():
@@ -119,11 +149,9 @@ def adjust_template_rows_and_tables(ws, num_students):
                     scol, srow, ecol, erow = match_range.groups()
                     srow_int, erow_int = int(srow), int(erow)
                     
-                    # Eğer kural orijinal mavi kısımdan başlıyorsa ÇÖPE AT
                     if srow_int > original_last_student_row:
                         continue 
                         
-                    # Kural öğrencileri kapsıyorsa tam son öğrencide KES
                     if srow_int <= start_row and erow_int >= start_row:
                         new_ranges.append(f"{scol}{start_row}:{ecol}{last_student_row}")
                     else:
@@ -133,7 +161,6 @@ def adjust_template_rows_and_tables(ws, num_students):
                     col, row = match_cell.groups()
                     row_int = int(row)
                     
-                    # Eğer hücre orijinal mavi kısımda ise ÇÖPE AT
                     if row_int > original_last_student_row:
                         continue
                         
@@ -144,7 +171,6 @@ def adjust_template_rows_and_tables(ws, num_students):
                 else:
                     new_ranges.append(rng)
             
-            # Eğer new_ranges boş kalmadıysa (yani kural tamamen çöpe atılmadıysa) kuralı ekle
             if new_ranges:
                 new_sqref_str = " ".join(new_ranges)
                 try:
@@ -163,11 +189,9 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         ws = wb[sheet_name]
         adjust_template_rows_and_tables(ws, len(students))
         
-    # İLK SAYFAYA ÖZEL İŞLEMLER
     first_sheet = wb.worksheets[0]
     first_sheet.title = class_name
     
-    # A1 Başlığına Sınıf ve Modül adını yazdır ve Puntosunu 20 Yap
     first_sheet["A1"] = f"{class_name} - {module_name}"
     current_font = first_sheet["A1"].font
     if current_font:
@@ -200,7 +224,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
 st.title("Excel Gradebook Generator")
 
 class_lists_file = st.file_uploader("Class Lists (Excel)", type=["xlsx"])
-
 module_name = st.text_input("Module Name (e.g., Module 3)", value="Module 3")
 
 st.subheader("Gradebook Templates")
