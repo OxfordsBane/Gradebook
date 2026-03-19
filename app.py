@@ -4,6 +4,7 @@ from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
 from openpyxl.styles import Font
 from openpyxl.worksheet.cell_range import MultiCellRange
+from openpyxl.formatting.rule import Rule, IconSet, FormatObject
 import re
 import io
 import zipfile
@@ -38,7 +39,8 @@ def get_current_student_rows(ws, start_row=3):
     count = 0
     for r in range(start_row, ws.max_row + 1):
         val = ws.cell(row=r, column=1).value
-        if val is not None and str(val).strip().isdigit():
+        # Formülle gelen sayılar veya doğrudan girilen rakamlar için kontrol
+        if val is not None and str(val).strip() != "" and str(val).strip() != "0":
             count += 1
         else:
             break
@@ -54,10 +56,6 @@ def get_current_student_rows(ws, start_row=3):
     return 30
 
 def shift_formula_rows(formula_str, threshold_row, offset):
-    """
-    Formül metinlerindeki hücre referanslarını (Örn: E$33, A15) tespit eder
-    ve eğer eşik değerinden büyükse (yani mavi alandaysa) satır sayısını offset kadar kaydırır.
-    """
     if not formula_str or not isinstance(formula_str, str) or not formula_str.startswith('='):
         return formula_str
         
@@ -68,7 +66,6 @@ def shift_formula_rows(formula_str, threshold_row, offset):
             return f"{prefix}{row_num + offset}"
         return match.group(0)
         
-    # Sadece geçerli hücre referanslarını eşleştirir (Örn: E33, E$33, $E$33)
     return re.sub(r'(?<![A-Za-z])(\$?[A-Za-z]{1,3}\$?)(\d+)\b', repl, formula_str)
 
 def adjust_template_rows_and_tables(ws, num_students):
@@ -100,14 +97,14 @@ def adjust_template_rows_and_tables(ws, num_students):
 
     last_student_row = start_row + num_students - 1
 
-    # Formüllerdeki $ işaretli mutlak referansları ve mavi alan formüllerini topluca güncelle
+    # Formüllerdeki referansları güncelle
     if offset != 0:
         for row in ws.iter_rows():
             for cell in row:
                 if cell.data_type == 'f' and cell.value:
                     cell.value = shift_formula_rows(str(cell.value), action_row_idx, offset)
 
-    # Excel Tablo referans sınırlarını güncelle
+    # Tablo boyutlarını güncelle
     for table in ws.tables.values():
         ref = table.ref
         min_col, min_row, max_col, max_row = range_boundaries(ref)
@@ -117,7 +114,7 @@ def adjust_template_rows_and_tables(ws, num_students):
         new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
-    # Düzeltilmiş (Usta) Formülleri tüm öğrencilere uyarlayarak kopyala
+    # Formülleri alt satırlara uyarla
     for r in range(start_row + 1, last_student_row + 1):
         for col in range(1, ws.max_column + 1):
             master_cell = ws.cell(row=start_row, column=col)
@@ -129,7 +126,7 @@ def adjust_template_rows_and_tables(ws, num_students):
                 except:
                     target_cell.value = master_cell.value
 
-    # Koşullu Biçimlendirmeleri (CF) Mavi Alandan Tamamen Temizleme İşlemi
+    # Mavi Alana sarkan eski kuralları temizle
     if hasattr(ws.conditional_formatting, '_cf_rules'):
         new_cf_rules = {}
         for sqref, rules in ws.conditional_formatting._cf_rules.items():
@@ -139,7 +136,6 @@ def adjust_template_rows_and_tables(ws, num_students):
                 sqref_str = str(sqref)
             
             sqref_str = sqref_str.replace("<MultiCellRange [", "").replace("]>", "")
-            
             new_ranges = []
             for rng in sqref_str.split():
                 match_range = re.match(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$", rng)
@@ -181,14 +177,31 @@ def adjust_template_rows_and_tables(ws, num_students):
                 
         ws.conditional_formatting._cf_rules = new_cf_rules
 
+    return last_student_row 
+
 def process_class_template(template_bytes, class_name, students, module_name, advisor_name):
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
     wb.template = False 
     
-    for sheet_name in wb.sheetnames:
+    # 1. TÜM SAYFALARIN SATIRLARINI VE TABLOLARINI AYARLA
+    for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
-        adjust_template_rows_and_tables(ws, len(students))
+        last_student_row = adjust_template_rows_and_tables(ws, len(students))
         
+        # SADECE İLK SAYFA HARİCİNDEKİ SAYFALARA E SÜTUNU CF KURALINI EKLE
+        if i > 0:
+            cfvo1 = FormatObject(type='num', val=0)   # Kırmızı Aşağı Ok (< 45)
+            cfvo2 = FormatObject(type='num', val=45)  # Turuncu Sağ-Aşağı Ok (>= 45)
+            cfvo3 = FormatObject(type='num', val=60)  # Sarı Sağ Ok (>= 60)
+            cfvo4 = FormatObject(type='num', val=70)  # Sarı-Yeşil Sağ-Yukarı Ok (>= 70)
+            cfvo5 = FormatObject(type='num', val=85)  # Yeşil Yukarı Ok (>= 85)
+            
+            icon_set = IconSet(iconSet='5Arrows', cfvo=[cfvo1, cfvo2, cfvo3, cfvo4, cfvo5])
+            rule = Rule(type='iconSet', iconSet=icon_set)
+            
+            ws.conditional_formatting.add(f"E3:E{last_student_row}", rule)
+        
+    # 2. İLK SAYFAYA ÖZEL İŞLEMLER (Öğrenci Verisi, Başlık, Advisor)
     first_sheet = wb.worksheets[0]
     first_sheet.title = class_name
     
@@ -209,6 +222,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         if advisor_found:
             break
     
+    # Öğrenci listesini SADECE ilk sayfaya yazıyoruz
     start_row = 3
     for i, student in enumerate(students):
         first_sheet.cell(row=start_row + i, column=1, value=student["index"])
