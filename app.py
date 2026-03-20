@@ -228,7 +228,8 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                         
                     icon_set_io = IconSet(iconSet='5Arrows', cfvo=[cfvo1_io, cfvo2_io, cfvo3_io, cfvo4_io, cfvo5_io])
                     rule_io = Rule(type='iconSet', iconSet=icon_set_io)
-                    ws.conditional_formatting.add(f"I3:I{last_student_row}", rule_rule_io)
+                    # Buradaki yazım hatası düzeltildi (rule_rule_io yerine rule_io)
+                    ws.conditional_formatting.add(f"I3:I{last_student_row}", rule_io)
                     ws.conditional_formatting.add(f"O3:O{last_student_row}", rule_io)
         
     first_sheet = wb.worksheets[0]
