@@ -222,8 +222,18 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     rule_icon_L = Rule(type='iconSet', iconSet=icon_set_L)
     
     first_sheet.conditional_formatting.add(f"L3:L{first_sheet_last_row}", rule_icon_L)
+    
+    # 3. N Sütunu (3'lü Sembol - Yeşil Tik, Sarı Ünlem, Kırmızı Çarpı)
+    cfvo1_N = FormatObject(type='num', val=0)       # Kırmızı Çarpı (56.99 altı)
+    cfvo2_N = FormatObject(type='num', val=56.99)   # Sarı Ünlem (56.99 ve üstü)
+    cfvo3_N = FormatObject(type='num', val=59.5)    # Yeşil Tik (59.5 ve üstü)
+    
+    icon_set_N = IconSet(iconSet='3Symbols', cfvo=[cfvo1_N, cfvo2_N, cfvo3_N])
+    rule_icon_N = Rule(type='iconSet', iconSet=icon_set_N)
+    
+    first_sheet.conditional_formatting.add(f"N3:N{first_sheet_last_row}", rule_icon_N)
         
-    # 3. O Sütunu (Harf Notu Renklendirmesi)
+    # 4. O Sütunu (Harf Notu Renklendirmesi)
     white_bold_font = Font(color="FFFFFF", bold=True)
     rule_F = CellIsRule(operator='equal', formula=['"F"'], stopIfTrue=True, fill=PatternFill(start_color="CC0000", end_color="CC0000", fill_type="solid"), font=white_bold_font)
     rule_C = CellIsRule(operator='equal', formula=['"C"'], stopIfTrue=True, fill=PatternFill(start_color="4E8542", end_color="4E8542", fill_type="solid"), font=white_bold_font)
