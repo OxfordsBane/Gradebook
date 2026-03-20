@@ -132,10 +132,15 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         for col in range(1, ws.max_column + 1):
             ws.cell(row=r, column=col).fill = transparent_fill
 
-    # 2. Resmi silme metoduyla tüm Conditional Formatting kurallarını (Renk skalası dahil) yok et
-    if hasattr(ws, 'conditional_formatting'):
-        for sqref in list(ws.conditional_formatting.keys()):
-            del ws.conditional_formatting[sqref]
+    # 2. Syntax Hatası Düzeltilmiş Resmi Silme Metodu
+    # Şablondaki (kırmızı renk skalası dahil) TÜM gizli koşullu biçimlendirmeleri SİLİYORUZ.
+    if hasattr(ws, 'conditional_formatting') and hasattr(ws.conditional_formatting, '_cf_rules'):
+        ws.conditional_formatting._cf_rules.clear()
+        
+    # 3. İleri Düzey Güvenlik: Excel'in gizli uzantılarındaki (extLst) inatçı CF kurallarını da etkisiz hale getir
+    if hasattr(ws, 'extLst') and ws.extLst is not None:
+        if hasattr(ws.extLst, 'ext'):
+            ws.extLst.ext = [e for e in ws.extLst.ext if '{78C0D931-6437-407d-A8EE-F0AAD7539E65}' not in str(e.uri)]
 
     return last_student_row 
 
@@ -153,6 +158,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         if i == 0:
             first_sheet_last_row = last_student_row
             
+        # Sayfa temizlendikten sonra SADECE İLK SAYFA HARİCİNDEKİ SAYFALARA E SÜTUNU CF KURALINI EKLE
         if i > 0:
             cfvo1 = FormatObject(type='num', val=0)   
             cfvo2 = FormatObject(type='num', val=45)  
