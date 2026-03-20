@@ -35,12 +35,16 @@ def get_class_info_from_sheet(sheet):
             
     return students, advisor_name
 
-def get_current_student_rows(ws, start_row=3):
+def get_template_student_rows(wb, start_row=3):
+    """
+    Şablonun gerçek öğrenci satır sayısını SADECE İLK SAYFADAN (sayıların kesin olduğu yerden)
+    hesaplar. Böylece diğer sayfalardaki formüller programı kandıramaz.
+    """
+    ws = wb.worksheets[0]
     count = 0
     for r in range(start_row, ws.max_row + 1):
         val = ws.cell(row=r, column=1).value
-        # Formülle gelen sayılar veya doğrudan girilen rakamlar için kontrol
-        if val is not None and str(val).strip() != "" and str(val).strip() != "0":
+        if val is not None and str(val).strip().isdigit():
             count += 1
         else:
             break
@@ -68,9 +72,8 @@ def shift_formula_rows(formula_str, threshold_row, offset):
         
     return re.sub(r'(?<![A-Za-z])(\$?[A-Za-z]{1,3}\$?)(\d+)\b', repl, formula_str)
 
-def adjust_template_rows_and_tables(ws, num_students):
+def adjust_template_rows_and_tables(ws, num_students, current_rows):
     start_row = 3
-    current_rows = get_current_student_rows(ws, start_row)
     original_last_student_row = start_row + current_rows - 1
     
     action_row_idx = start_row + (current_rows // 2)
@@ -97,7 +100,7 @@ def adjust_template_rows_and_tables(ws, num_students):
 
     last_student_row = start_row + num_students - 1
 
-    # Formüllerdeki referansları güncelle
+    # Formüllerdeki $ işaretli referansları güncelle
     if offset != 0:
         for row in ws.iter_rows():
             for cell in row:
@@ -114,7 +117,7 @@ def adjust_template_rows_and_tables(ws, num_students):
         new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
-    # Formülleri alt satırlara uyarla
+    # Öğrenci formüllerini alt satırlara kopyala
     for r in range(start_row + 1, last_student_row + 1):
         for col in range(1, ws.max_column + 1):
             master_cell = ws.cell(row=start_row, column=col)
@@ -126,16 +129,20 @@ def adjust_template_rows_and_tables(ws, num_students):
                 except:
                     target_cell.value = master_cell.value
 
-    # Mavi Alana sarkan eski kuralları temizle (Yeni ve Katı Kurallar)
+    # Mavi Alandaki tüm eski Conditional Formatting kurallarını KESİN olarak temizle
     if hasattr(ws.conditional_formatting, '_cf_rules'):
-        new_cf_rules = {}
+        cfs = []
         for sqref, rules in ws.conditional_formatting._cf_rules.items():
             if hasattr(sqref, 'ranges'):
                 sqref_str = " ".join([rng.coord for rng in sqref.ranges])
             else:
                 sqref_str = str(sqref)
-            
             sqref_str = sqref_str.replace("<MultiCellRange [", "").replace("]>", "")
+            cfs.append((sqref_str, rules))
+            
+        ws.conditional_formatting._cf_rules.clear()
+        
+        for sqref_str, rules in cfs:
             new_ranges = []
             for rng in sqref_str.split():
                 match_range = re.match(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$", rng)
@@ -145,13 +152,13 @@ def adjust_template_rows_and_tables(ws, num_students):
                     scol, srow, ecol, erow = match_range.groups()
                     srow_int, erow_int = int(srow), int(erow)
                     
-                    # Eğer kural mavi alandan veya daha aşağıdan başlıyorsa DİREKT ÇÖPE AT
-                    if srow_int > last_student_row:
+                    # Eğer kural mavi alandan veya daha altından başlıyorsa TAMAMEN ÇÖPE AT
+                    if srow_int > original_last_student_row:
                         continue 
                         
-                    # Eğer kural mavi alana doğru taşıyorsa tam öğrencilerin bittiği yerde KES
-                    if erow_int > last_student_row:
-                        new_ranges.append(f"{scol}{srow_int}:{ecol}{last_student_row}")
+                    # Eğer kural öğrencileri kapsıyorsa tam son öğrencide KES
+                    if srow_int <= start_row and erow_int >= start_row:
+                        new_ranges.append(f"{scol}{start_row}:{ecol}{last_student_row}")
                     else:
                         new_ranges.append(rng)
                         
@@ -159,9 +166,11 @@ def adjust_template_rows_and_tables(ws, num_students):
                     col, row = match_cell.groups()
                     row_int = int(row)
                     
-                    # Eğer tekil bir hücre kuralı mavi alana denk geliyorsa DİREKT ÇÖPE AT
-                    if row_int > last_student_row:
+                    if row_int > original_last_student_row:
                         continue
+                        
+                    if row_int == start_row:
+                        new_ranges.append(f"{col}{start_row}:{col}{last_student_row}")
                     else:
                         new_ranges.append(rng)
                 else:
@@ -169,13 +178,11 @@ def adjust_template_rows_and_tables(ws, num_students):
             
             if new_ranges:
                 new_sqref_str = " ".join(new_ranges)
-                try:
-                    new_sqref = MultiCellRange(new_sqref_str)
-                    new_cf_rules[new_sqref] = rules
-                except:
-                    new_cf_rules[sqref] = rules
-                
-        ws.conditional_formatting._cf_rules = new_cf_rules
+                for rule in rules:
+                    try:
+                        ws.conditional_formatting.add(new_sqref_str, rule)
+                    except:
+                        pass
 
     return last_student_row 
 
@@ -183,22 +190,26 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
     wb.template = False 
     
+    # Gerçek şablon satır sayısını ilk sayfadan tespit et
+    template_student_rows = get_template_student_rows(wb, start_row=3)
+    
     # 1. TÜM SAYFALARIN SATIRLARINI VE TABLOLARINI AYARLA
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
-        last_student_row = adjust_template_rows_and_tables(ws, len(students))
+        last_student_row = adjust_template_rows_and_tables(ws, len(students), template_student_rows)
         
         # SADECE İLK SAYFA HARİCİNDEKİ SAYFALARA E SÜTUNU CF KURALINI EKLE
         if i > 0:
-            cfvo1 = FormatObject(type='num', val=0)   # Kırmızı Aşağı Ok (< 45)
-            cfvo2 = FormatObject(type='num', val=45)  # Turuncu Sağ-Aşağı Ok (>= 45)
-            cfvo3 = FormatObject(type='num', val=60)  # Sarı Sağ Ok (>= 60)
-            cfvo4 = FormatObject(type='num', val=70)  # Sarı-Yeşil Sağ-Yukarı Ok (>= 70)
-            cfvo5 = FormatObject(type='num', val=85)  # Yeşil Yukarı Ok (>= 85)
+            cfvo1 = FormatObject(type='num', val=0)   
+            cfvo2 = FormatObject(type='num', val=45)  
+            cfvo3 = FormatObject(type='num', val=60)  
+            cfvo4 = FormatObject(type='num', val=70)  
+            cfvo5 = FormatObject(type='num', val=85)  
             
             icon_set = IconSet(iconSet='5Arrows', cfvo=[cfvo1, cfvo2, cfvo3, cfvo4, cfvo5])
             rule = Rule(type='iconSet', iconSet=icon_set)
             
+            # Kural sadece öğrencilere uygulanır, last_student_row mavi satıra taşmaz.
             ws.conditional_formatting.add(f"E3:E{last_student_row}", rule)
         
     # 2. İLK SAYFAYA ÖZEL İŞLEMLER (Öğrenci Verisi, Başlık, Advisor)
