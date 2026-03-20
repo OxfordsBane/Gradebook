@@ -3,7 +3,6 @@ import openpyxl
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
 from openpyxl.styles import Font, PatternFill
-from openpyxl.worksheet.cell_range import MultiCellRange
 from openpyxl.formatting.rule import Rule, IconSet, FormatObject, CellIsRule
 import re
 import io
@@ -115,6 +114,13 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
+    # Master satırı (3. satır) temizliği: Sütun 5'ten sonra formül olmayan tüm hücrelerin içini boşalt.
+    for col in range(5, ws.max_column + 1):
+        master_cell = ws.cell(row=start_row, column=col)
+        if master_cell.data_type != 'f':
+            master_cell.value = None
+
+    # Formülleri alt satırlara uyarla ve öğrenci satırlarındaki kalıntıları temizle
     for r in range(start_row + 1, last_student_row + 1):
         for col in range(1, ws.max_column + 1):
             master_cell = ws.cell(row=start_row, column=col)
@@ -125,21 +131,15 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
                     target_cell.value = Translator(master_cell.value, origin=master_cell.coordinate).translate_formula(target_cell.coordinate)
                 except:
                     target_cell.value = master_cell.value
+            else:
+                # E sütunundan (5) itibaren formül yoksa İÇERİĞİ ZORLA SİL. 
+                # (3rd checker ve statik sıfırların yok edilmesini sağlar)
+                if col >= 5:
+                    target_cell.value = None
 
-    # 1. Tüm öğrenci satırlarındaki olası statik dolguları tamamen şeffaf yap
-    transparent_fill = PatternFill(fill_type=None)
-    for r in range(start_row, last_student_row + 1):
-        for col in range(1, ws.max_column + 1):
-            ws.cell(row=r, column=col).fill = transparent_fill
-
-    # 2. Standart CF kurallarını temizle
+    # Eski kuralların mavi alana taşmasını engellemek için mevcut CF'leri temizle
     if hasattr(ws, 'conditional_formatting') and hasattr(ws.conditional_formatting, '_cf_rules'):
         ws.conditional_formatting._cf_rules.clear()
-        
-    # 3. İLERİ DÜZEY GÜVENLİK (B1 ÇÖZÜMÜ): 
-    # Excel'in gizli uzantılarındaki modern CF kurallarını (Renk Skalası) kökten sil
-    if hasattr(ws, 'extLst'):
-        ws.extLst = None
 
     return last_student_row 
 
