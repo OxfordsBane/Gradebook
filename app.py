@@ -114,13 +114,11 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
-    # Master satırı (3. satır) temizliği: Sütun 5'ten sonra formül olmayan tüm hücrelerin içini boşalt.
     for col in range(5, ws.max_column + 1):
         master_cell = ws.cell(row=start_row, column=col)
         if master_cell.data_type != 'f':
             master_cell.value = None
 
-    # Formülleri alt satırlara uyarla ve öğrenci satırlarındaki kalıntıları temizle
     for r in range(start_row + 1, last_student_row + 1):
         for col in range(1, ws.max_column + 1):
             master_cell = ws.cell(row=start_row, column=col)
@@ -132,14 +130,14 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
                 except:
                     target_cell.value = master_cell.value
             else:
-                # E sütunundan (5) itibaren formül yoksa İÇERİĞİ ZORLA SİL. 
-                # (3rd checker ve statik sıfırların yok edilmesini sağlar)
                 if col >= 5:
                     target_cell.value = None
 
-    # Eski kuralların mavi alana taşmasını engellemek için mevcut CF'leri temizle
     if hasattr(ws, 'conditional_formatting') and hasattr(ws.conditional_formatting, '_cf_rules'):
         ws.conditional_formatting._cf_rules.clear()
+        
+    if hasattr(ws, 'extLst'):
+        ws.extLst = None
 
     return last_student_row 
 
@@ -198,6 +196,19 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         first_sheet.cell(row=start_row + i, column=2, value=student["number"])
         first_sheet.cell(row=start_row + i, column=3, value=student["name"])
         first_sheet.cell(row=start_row + i, column=4, value=student["surname"])
+        
+    cfvo1_main = FormatObject(type='num', val=0)   
+    cfvo2_main = FormatObject(type='num', val=45)  
+    cfvo3_main = FormatObject(type='num', val=60)  
+    cfvo4_main = FormatObject(type='num', val=70)  
+    cfvo5_main = FormatObject(type='num', val=85)  
+    
+    icon_set_main = IconSet(iconSet='5Arrows', cfvo=[cfvo1_main, cfvo2_main, cfvo3_main, cfvo4_main, cfvo5_main])
+    rule_arrows_main = Rule(type='iconSet', iconSet=icon_set_main)
+    
+    first_sheet.conditional_formatting.add(f"E3:E{first_sheet_last_row}", rule_arrows_main)
+    first_sheet.conditional_formatting.add(f"F3:F{first_sheet_last_row}", rule_arrows_main)
+    first_sheet.conditional_formatting.add(f"M3:M{first_sheet_last_row}", rule_arrows_main)
         
     white_bold_font = Font(color="FFFFFF", bold=True)
     
