@@ -146,6 +146,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     wb.template = False 
     
     first_sheet_last_row = 3
+    level_prefix = class_name.split(".")[0].upper()
     
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
@@ -166,6 +167,51 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
             rule = Rule(type='iconSet', iconSet=icon_set)
             
             ws.conditional_formatting.add(f"E3:E{last_student_row}", rule)
+            
+            if sheet_name.lower() == "midterm":
+                if level_prefix == "B2":
+                    cfvo1_mid = FormatObject(type='num', val=0)
+                    cfvo2_mid = FormatObject(type='num', val=7)
+                    cfvo3_mid = FormatObject(type='num', val=13)
+                    cfvo4_mid = FormatObject(type='num', val=19)
+                    cfvo5_mid = FormatObject(type='num', val=25)
+                else:
+                    cfvo1_mid = FormatObject(type='num', val=0)
+                    cfvo2_mid = FormatObject(type='num', val=4)
+                    cfvo3_mid = FormatObject(type='num', val=8)
+                    cfvo4_mid = FormatObject(type='num', val=12)
+                    cfvo5_mid = FormatObject(type='num', val=16)
+                
+                icon_set_mid = IconSet(iconSet='5Arrows', cfvo=[cfvo1_mid, cfvo2_mid, cfvo3_mid, cfvo4_mid, cfvo5_mid])
+                rule_mid = Rule(type='iconSet', iconSet=icon_set_mid)
+                ws.conditional_formatting.add(f"I3:I{last_student_row}", rule_mid)
+                
+                cfvo1_ns = FormatObject(type='num', val=0)
+                cfvo2_ns = FormatObject(type='num', val=8)
+                cfvo3_ns = FormatObject(type='num', val=16)
+                cfvo4_ns = FormatObject(type='num', val=24)
+                cfvo5_ns = FormatObject(type='num', val=32)
+                icon_set_ns = IconSet(iconSet='5Arrows', cfvo=[cfvo1_ns, cfvo2_ns, cfvo3_ns, cfvo4_ns, cfvo5_ns])
+                rule_ns = Rule(type='iconSet', iconSet=icon_set_ns)
+                
+                ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_ns)
+                ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_ns)
+
+            elif sheet_name.lower() == "met":
+                cfvo1_met = FormatObject(type='num', val=0)
+                cfvo2_met = FormatObject(type='num', val=8)
+                cfvo3_met = FormatObject(type='num', val=16)
+                cfvo4_met = FormatObject(type='num', val=24)
+                cfvo5_met = FormatObject(type='num', val=32)
+                icon_set_met = IconSet(iconSet='5Arrows', cfvo=[cfvo1_met, cfvo2_met, cfvo3_met, cfvo4_met, cfvo5_met])
+                rule_met = Rule(type='iconSet', iconSet=icon_set_met)
+                
+                if level_prefix == "A1":
+                    ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_met)
+                    ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_met)
+                elif level_prefix in ["A2", "B1", "B2"]:
+                    ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_met)
+                    ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_met)
         
     first_sheet = wb.worksheets[0]
     first_sheet.title = class_name
