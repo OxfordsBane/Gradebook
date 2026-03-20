@@ -148,7 +148,8 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet_last_row = 3
     level_prefix = class_name.split(".")[0].upper()
     
-    black_fill = PatternFill(start_color="000000", end_color="000000", fill_type="solid")
+    # Siyah dolgu için FF000000 kullanıldı (ARGB formatı)
+    black_fill = PatternFill(start_color="FF000000", end_color="FF000000", fill_type="solid")
     white_bold_underline_font = Font(color="FFFFFF", bold=True, underline="single")
     rule_diff_ns = FormulaRule(formula=['ABS($N3-$S3)>6'], stopIfTrue=True, fill=black_fill, font=white_bold_underline_font)
     rule_diff_ty = FormulaRule(formula=['ABS($T3-$Y3)>6'], stopIfTrue=True, fill=black_fill, font=white_bold_underline_font)
@@ -305,10 +306,10 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet.conditional_formatting.add(f"N3:N{first_sheet_last_row}", rule_icon_N)
         
     white_bold_font = Font(color="FFFFFF", bold=True)
-    rule_F = CellIsRule(operator='equal', formula=['"F"'], stopIfTrue=True, fill=PatternFill(start_color="CC0000", end_color="CC0000", fill_type="solid"), font=white_bold_font)
-    rule_C = CellIsRule(operator='equal', formula=['"C"'], stopIfTrue=True, fill=PatternFill(start_color="4E8542", end_color="4E8542", fill_type="solid"), font=white_bold_font)
-    rule_B = CellIsRule(operator='equal', formula=['"B"'], stopIfTrue=True, fill=PatternFill(start_color="1B587C", end_color="1B587C", fill_type="solid"), font=white_bold_font)
-    rule_A = CellIsRule(operator='equal', formula=['"A"'], stopIfTrue=True, fill=PatternFill(start_color="FFCC00", end_color="FFCC00", fill_type="solid"), font=white_bold_font)
+    rule_F = CellIsRule(operator='equal', formula=['"F"'], stopIfTrue=True, fill=PatternFill(start_color="FFCC0000", end_color="FFCC0000", fill_type="solid"), font=white_bold_font)
+    rule_C = CellIsRule(operator='equal', formula=['"C"'], stopIfTrue=True, fill=PatternFill(start_color="FF4E8542", end_color="FF4E8542", fill_type="solid"), font=white_bold_font)
+    rule_B = CellIsRule(operator='equal', formula=['"B"'], stopIfTrue=True, fill=PatternFill(start_color="FF1B587C", end_color="FF1B587C", fill_type="solid"), font=white_bold_font)
+    rule_A = CellIsRule(operator='equal', formula=['"A"'], stopIfTrue=True, fill=PatternFill(start_color="FFFFCC00", end_color="FFFFCC00", fill_type="solid"), font=white_bold_font)
     
     letter_grade_range = f"O3:O{first_sheet_last_row}"
     first_sheet.conditional_formatting.add(letter_grade_range, rule_F)
