@@ -197,9 +197,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         first_sheet.cell(row=start_row + i, column=3, value=student["name"])
         first_sheet.cell(row=start_row + i, column=4, value=student["surname"])
         
-    # --- KOŞULLU BİÇİMLENDİRMELER (İLK SAYFA) ---
-    
-    # 1. E, F, M Sütunları (5'li Ok)
     cfvo1_main = FormatObject(type='num', val=0)   
     cfvo2_main = FormatObject(type='num', val=45)  
     cfvo3_main = FormatObject(type='num', val=60)  
@@ -213,27 +210,24 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet.conditional_formatting.add(f"F3:F{first_sheet_last_row}", rule_arrows_main)
     first_sheet.conditional_formatting.add(f"M3:M{first_sheet_last_row}", rule_arrows_main)
 
-    # 2. L Sütunu (3'lü Yuvarlak/Trafik Lambası)
-    cfvo1_L = FormatObject(type='num', val=0)       # Kırmızı (46.99 altı)
-    cfvo2_L = FormatObject(type='num', val=46.99)   # Sarı (46.99 ve üstü)
-    cfvo3_L = FormatObject(type='num', val=49.99)   # Yeşil (49.99 ve üstü)
+    cfvo1_L = FormatObject(type='num', val=0)       
+    cfvo2_L = FormatObject(type='num', val=46.99)   
+    cfvo3_L = FormatObject(type='num', val=49.99)   
     
     icon_set_L = IconSet(iconSet='3TrafficLights1', cfvo=[cfvo1_L, cfvo2_L, cfvo3_L])
     rule_icon_L = Rule(type='iconSet', iconSet=icon_set_L)
     
     first_sheet.conditional_formatting.add(f"L3:L{first_sheet_last_row}", rule_icon_L)
     
-    # 3. N Sütunu (3'lü Sembol - Yeşil Tik, Sarı Ünlem, Kırmızı Çarpı)
-    cfvo1_N = FormatObject(type='num', val=0)       # Kırmızı Çarpı (56.99 altı)
-    cfvo2_N = FormatObject(type='num', val=56.99)   # Sarı Ünlem (56.99 ve üstü)
-    cfvo3_N = FormatObject(type='num', val=59.5)    # Yeşil Tik (59.5 ve üstü)
+    cfvo1_N = FormatObject(type='num', val=0)       
+    cfvo2_N = FormatObject(type='num', val=56.99)   
+    cfvo3_N = FormatObject(type='num', val=59.5)    
     
-    icon_set_N = IconSet(iconSet='3Symbols', cfvo=[cfvo1_N, cfvo2_N, cfvo3_N])
+    icon_set_N = IconSet(iconSet='3Symbols2', cfvo=[cfvo1_N, cfvo2_N, cfvo3_N])
     rule_icon_N = Rule(type='iconSet', iconSet=icon_set_N)
     
     first_sheet.conditional_formatting.add(f"N3:N{first_sheet_last_row}", rule_icon_N)
         
-    # 4. O Sütunu (Harf Notu Renklendirmesi)
     white_bold_font = Font(color="FFFFFF", bold=True)
     rule_F = CellIsRule(operator='equal', formula=['"F"'], stopIfTrue=True, fill=PatternFill(start_color="CC0000", end_color="CC0000", fill_type="solid"), font=white_bold_font)
     rule_C = CellIsRule(operator='equal', formula=['"C"'], stopIfTrue=True, fill=PatternFill(start_color="4E8542", end_color="4E8542", fill_type="solid"), font=white_bold_font)
