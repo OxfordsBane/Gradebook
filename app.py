@@ -3,7 +3,7 @@ import openpyxl
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
 from openpyxl.styles import Font, PatternFill
-from openpyxl.formatting.rule import Rule, IconSet, FormatObject, CellIsRule
+from openpyxl.formatting.rule import Rule, IconSet, FormatObject, CellIsRule, FormulaRule
 import re
 import io
 import zipfile
@@ -148,6 +148,11 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet_last_row = 3
     level_prefix = class_name.split(".")[0].upper()
     
+    black_fill = PatternFill(start_color="000000", end_color="000000", fill_type="solid")
+    white_bold_underline_font = Font(color="FFFFFF", bold=True, underline="single")
+    rule_diff_ns = FormulaRule(formula=['ABS($N3-$S3)>6'], stopIfTrue=True, fill=black_fill, font=white_bold_underline_font)
+    rule_diff_ty = FormulaRule(formula=['ABS($T3-$Y3)>6'], stopIfTrue=True, fill=black_fill, font=white_bold_underline_font)
+    
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
         template_student_rows = get_template_student_rows(wb, i, start_row=3)
@@ -196,6 +201,9 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                 
                 ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_ns)
                 ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_ns)
+                
+                ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_diff_ns)
+                ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
 
             elif sheet_name.lower() == "met":
                 cfvo1_met = FormatObject(type='num', val=0)
@@ -209,9 +217,13 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                 if level_prefix == "A1":
                     ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_met)
                     ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_met)
+                    ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_diff_ns)
+                    ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
                 elif level_prefix in ["A2", "B1", "B2"]:
                     ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_met)
                     ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_met)
+                    ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_diff_ty)
+                    ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_diff_ty)
                     
                     if level_prefix == "A2":
                         cfvo1_io = FormatObject(type='num', val=0)
@@ -228,7 +240,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                         
                     icon_set_io = IconSet(iconSet='5Arrows', cfvo=[cfvo1_io, cfvo2_io, cfvo3_io, cfvo4_io, cfvo5_io])
                     rule_io = Rule(type='iconSet', iconSet=icon_set_io)
-                    # Buradaki yazım hatası düzeltildi (rule_rule_io yerine rule_io)
                     ws.conditional_formatting.add(f"I3:I{last_student_row}", rule_io)
                     ws.conditional_formatting.add(f"O3:O{last_student_row}", rule_io)
         
