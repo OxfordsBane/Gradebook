@@ -125,13 +125,17 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
                     target_cell.value = Translator(master_cell.value, origin=master_cell.coordinate).translate_formula(target_cell.coordinate)
                 except:
                     target_cell.value = master_cell.value
-                    
-            target_cell.fill = PatternFill(fill_type=None)
-            if target_cell.font:
-                target_cell.font = Font(name=target_cell.font.name, size=target_cell.font.size, bold=target_cell.font.bold, italic=target_cell.font.italic)
 
-    if hasattr(ws.conditional_formatting, '_cf_rules'):
-        ws.conditional_formatting._cf_rules.clear()
+    # 1. Tüm öğrenci satırlarındaki olası statik dolguları tamamen şeffaf yap
+    transparent_fill = PatternFill(fill_type=None)
+    for r in range(start_row, last_student_row + 1):
+        for col in range(1, ws.max_column + 1):
+            ws.cell(row=r, column=col).fill = transparent_fill
+
+    # 2. Resmi silme metoduyla tüm Conditional Formatting kurallarını (Renk skalası dahil) yok et
+    if hasattr(ws, 'conditional_formatting'):
+        for sqref in list(ws.conditional_formatting.keys()):
+            del ws.conditional_formatting[sqref]
 
     return last_student_row 
 
