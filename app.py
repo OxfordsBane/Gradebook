@@ -148,11 +148,13 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet_last_row = 3
     level_prefix = class_name.split(".")[0].upper()
     
-    # Siyah dolgu için FF000000 kullanıldı (ARGB formatı)
+    # Siyah dolgu için ARGB (FF000000)
     black_fill = PatternFill(start_color="FF000000", end_color="FF000000", fill_type="solid")
     white_bold_underline_font = Font(color="FFFFFF", bold=True, underline="single")
-    rule_diff_ns = FormulaRule(formula=['ABS($N3-$S3)>6'], stopIfTrue=True, fill=black_fill, font=white_bold_underline_font)
-    rule_diff_ty = FormulaRule(formula=['ABS($T3-$Y3)>6'], stopIfTrue=True, fill=black_fill, font=white_bold_underline_font)
+    
+    # stopIfTrue=False: Siyah boyama yapıldıktan sonra alttaki ikon kuralını da çalıştırır
+    rule_diff_ns = FormulaRule(formula=['ABS($N3-$S3)>6'], stopIfTrue=False, fill=black_fill, font=white_bold_underline_font)
+    rule_diff_ty = FormulaRule(formula=['ABS($T3-$Y3)>6'], stopIfTrue=False, fill=black_fill, font=white_bold_underline_font)
     
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
@@ -163,109 +165,74 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
             first_sheet_last_row = last_student_row
             
         if i > 0:
+            # Standart 5'li Ok Kuralı
             cfvo1 = FormatObject(type='num', val=0)   
             cfvo2 = FormatObject(type='num', val=45)  
             cfvo3 = FormatObject(type='num', val=60)  
             cfvo4 = FormatObject(type='num', val=70)  
             cfvo5 = FormatObject(type='num', val=85)  
-            
             icon_set = IconSet(iconSet='5Arrows', cfvo=[cfvo1, cfvo2, cfvo3, cfvo4, cfvo5])
             rule = Rule(type='iconSet', iconSet=icon_set)
-            
             ws.conditional_formatting.add(f"E3:E{last_student_row}", rule)
             
             if sheet_name.lower() == "midterm":
+                # I Sütunu (Oranlı Oklar)
                 if level_prefix == "B2":
-                    cfvo1_mid = FormatObject(type='num', val=0)
-                    cfvo2_mid = FormatObject(type='num', val=6)
-                    cfvo3_mid = FormatObject(type='num', val=12)
-                    cfvo4_mid = FormatObject(type='num', val=18)
-                    cfvo5_mid = FormatObject(type='num', val=24)
+                    cfvo_i = [FormatObject(type='num', val=v) for v in [0, 6, 12, 18, 24]]
                 else:
-                    cfvo1_mid = FormatObject(type='num', val=0)
-                    cfvo2_mid = FormatObject(type='num', val=4)
-                    cfvo3_mid = FormatObject(type='num', val=8)
-                    cfvo4_mid = FormatObject(type='num', val=12)
-                    cfvo5_mid = FormatObject(type='num', val=16)
+                    cfvo_i = [FormatObject(type='num', val=v) for v in [0, 4, 8, 12, 16]]
+                icon_set_mid = IconSet(iconSet='5Arrows', cfvo=cfvo_i)
+                ws.conditional_formatting.add(f"I3:I{last_student_row}", Rule(type='iconSet', iconSet=icon_set_mid))
                 
-                icon_set_mid = IconSet(iconSet='5Arrows', cfvo=[cfvo1_mid, cfvo2_mid, cfvo3_mid, cfvo4_mid, cfvo5_mid])
-                rule_mid = Rule(type='iconSet', iconSet=icon_set_mid)
-                ws.conditional_formatting.add(f"I3:I{last_student_row}", rule_mid)
+                # N ve S Sütunları (32 üzerinden Oklar)
+                cfvo_ns = [FormatObject(type='num', val=v) for v in [0, 8, 16, 24, 32]]
+                icon_set_ns = IconSet(iconSet='5Arrows', cfvo=cfvo_ns)
+                rule_arrows_ns = Rule(type='iconSet', iconSet=icon_set_ns)
                 
-                cfvo1_ns = FormatObject(type='num', val=0)
-                cfvo2_ns = FormatObject(type='num', val=8)
-                cfvo3_ns = FormatObject(type='num', val=16)
-                cfvo4_ns = FormatObject(type='num', val=24)
-                cfvo5_ns = FormatObject(type='num', val=32)
-                icon_set_ns = IconSet(iconSet='5Arrows', cfvo=[cfvo1_ns, cfvo2_ns, cfvo3_ns, cfvo4_ns, cfvo5_ns])
-                rule_ns = Rule(type='iconSet', iconSet=icon_set_ns)
-                
-                ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_ns)
-                ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_ns)
-                
+                # Önce DOLGU kuralını, sonra OK kuralını ekliyoruz (Görünürlük için)
                 ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_diff_ns)
                 ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
+                ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_arrows_ns)
+                ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_arrows_ns)
 
             elif sheet_name.lower() == "met":
-                cfvo1_met = FormatObject(type='num', val=0)
-                cfvo2_met = FormatObject(type='num', val=8)
-                cfvo3_met = FormatObject(type='num', val=16)
-                cfvo4_met = FormatObject(type='num', val=24)
-                cfvo5_met = FormatObject(type='num', val=32)
-                icon_set_met = IconSet(iconSet='5Arrows', cfvo=[cfvo1_met, cfvo2_met, cfvo3_met, cfvo4_met, cfvo5_met])
-                rule_met = Rule(type='iconSet', iconSet=icon_set_met)
+                cfvo_met = [FormatObject(type='num', val=v) for v in [0, 8, 16, 24, 32]]
+                icon_set_met = IconSet(iconSet='5Arrows', cfvo=cfvo_met)
+                rule_arrows_met = Rule(type='iconSet', iconSet=icon_set_met)
                 
                 if level_prefix == "A1":
-                    ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_met)
-                    ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_met)
                     ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_diff_ns)
                     ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
+                    ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_arrows_met)
+                    ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_arrows_met)
                 elif level_prefix in ["A2", "B1", "B2"]:
-                    ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_met)
-                    ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_met)
                     ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_diff_ty)
                     ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_diff_ty)
+                    ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_arrows_met)
+                    ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_arrows_met)
                     
+                    # I ve O Sütunları (Oranlı Oklar)
                     if level_prefix == "A2":
-                        cfvo1_io = FormatObject(type='num', val=0)
-                        cfvo2_io = FormatObject(type='num', val=3)
-                        cfvo3_io = FormatObject(type='num', val=6)
-                        cfvo4_io = FormatObject(type='num', val=9)
-                        cfvo5_io = FormatObject(type='num', val=12)
+                        cfvo_io = [FormatObject(type='num', val=v) for v in [0, 3, 6, 9, 12]]
                     else:
-                        cfvo1_io = FormatObject(type='num', val=0)
-                        cfvo2_io = FormatObject(type='num', val=4)
-                        cfvo3_io = FormatObject(type='num', val=8)
-                        cfvo4_io = FormatObject(type='num', val=12)
-                        cfvo5_io = FormatObject(type='num', val=16)
-                        
-                    icon_set_io = IconSet(iconSet='5Arrows', cfvo=[cfvo1_io, cfvo2_io, cfvo3_io, cfvo4_io, cfvo5_io])
+                        cfvo_io = [FormatObject(type='num', val=v) for v in [0, 4, 8, 12, 16]]
+                    icon_set_io = IconSet(iconSet='5Arrows', cfvo=cfvo_io)
                     rule_io = Rule(type='iconSet', iconSet=icon_set_io)
                     ws.conditional_formatting.add(f"I3:I{last_student_row}", rule_io)
                     ws.conditional_formatting.add(f"O3:O{last_student_row}", rule_io)
         
     first_sheet = wb.worksheets[0]
     first_sheet.title = class_name
-    
     first_sheet["A1"] = f"{class_name} - {module_name}"
-    current_font = first_sheet["A1"].font
-    if current_font:
-        first_sheet["A1"].font = Font(name=current_font.name, size=20, bold=current_font.bold, italic=current_font.italic, color=current_font.color)
-    else:
-        first_sheet["A1"].font = Font(size=20, bold=True)
-        
-    for i in range(1, len(wb.worksheets)):
-        wb.worksheets[i]["A1"] = f"='{class_name}'!A1"
     
+    # Advisor ve Öğrenci listesi işlemleri (Aynı kaldı)
     advisor_found = False
     for row in first_sheet.iter_rows():
         for cell in row:
             if cell.value and isinstance(cell.value, str) and "Advisor" in cell.value:
                 cell.value = f"Advisor: {advisor_name}"
-                advisor_found = True
-                break
-        if advisor_found:
-            break
+                advisor_found = True; break
+        if advisor_found: break
     
     start_row = 3
     for i, student in enumerate(students):
@@ -274,48 +241,25 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         first_sheet.cell(row=start_row + i, column=3, value=student["name"])
         first_sheet.cell(row=start_row + i, column=4, value=student["surname"])
         
-    cfvo1_main = FormatObject(type='num', val=0)   
-    cfvo2_main = FormatObject(type='num', val=45)  
-    cfvo3_main = FormatObject(type='num', val=60)  
-    cfvo4_main = FormatObject(type='num', val=70)  
-    cfvo5_main = FormatObject(type='num', val=85)  
-    
-    icon_set_main = IconSet(iconSet='5Arrows', cfvo=[cfvo1_main, cfvo2_main, cfvo3_main, cfvo4_main, cfvo5_main])
+    # Ana Sayfa Koşullu Biçimlendirmeler
+    cfvo_main = [FormatObject(type='num', val=v) for v in [0, 45, 60, 70, 85]]
+    icon_set_main = IconSet(iconSet='5Arrows', cfvo=cfvo_main)
     rule_arrows_main = Rule(type='iconSet', iconSet=icon_set_main)
-    
     first_sheet.conditional_formatting.add(f"E3:E{first_sheet_last_row}", rule_arrows_main)
     first_sheet.conditional_formatting.add(f"F3:F{first_sheet_last_row}", rule_arrows_main)
     first_sheet.conditional_formatting.add(f"M3:M{first_sheet_last_row}", rule_arrows_main)
 
-    cfvo1_L = FormatObject(type='num', val=0)       
-    cfvo2_L = FormatObject(type='num', val=46.99)   
-    cfvo3_L = FormatObject(type='num', val=49.99)   
+    cfvo_L = [FormatObject(type='num', val=v) for v in [0, 46.99, 49.99]]
+    first_sheet.conditional_formatting.add(f"L3:L{first_sheet_last_row}", Rule(type='iconSet', iconSet=IconSet(iconSet='3TrafficLights1', cfvo=cfvo_L)))
     
-    icon_set_L = IconSet(iconSet='3TrafficLights1', cfvo=[cfvo1_L, cfvo2_L, cfvo3_L])
-    rule_icon_L = Rule(type='iconSet', iconSet=icon_set_L)
-    
-    first_sheet.conditional_formatting.add(f"L3:L{first_sheet_last_row}", rule_icon_L)
-    
-    cfvo1_N = FormatObject(type='num', val=0)       
-    cfvo2_N = FormatObject(type='num', val=56.99)   
-    cfvo3_N = FormatObject(type='num', val=59.5)    
-    
-    icon_set_N = IconSet(iconSet='3Symbols2', cfvo=[cfvo1_N, cfvo2_N, cfvo3_N])
-    rule_icon_N = Rule(type='iconSet', iconSet=icon_set_N)
-    
-    first_sheet.conditional_formatting.add(f"N3:N{first_sheet_last_row}", rule_icon_N)
+    cfvo_N = [FormatObject(type='num', val=v) for v in [0, 56.99, 59.5]]
+    first_sheet.conditional_formatting.add(f"N3:N{first_sheet_last_row}", Rule(type='iconSet', iconSet=IconSet(iconSet='3Symbols2', cfvo=cfvo_N)))
         
-    white_bold_font = Font(color="FFFFFF", bold=True)
-    rule_F = CellIsRule(operator='equal', formula=['"F"'], stopIfTrue=True, fill=PatternFill(start_color="FFCC0000", end_color="FFCC0000", fill_type="solid"), font=white_bold_font)
-    rule_C = CellIsRule(operator='equal', formula=['"C"'], stopIfTrue=True, fill=PatternFill(start_color="FF4E8542", end_color="FF4E8542", fill_type="solid"), font=white_bold_font)
-    rule_B = CellIsRule(operator='equal', formula=['"B"'], stopIfTrue=True, fill=PatternFill(start_color="FF1B587C", end_color="FF1B587C", fill_type="solid"), font=white_bold_font)
-    rule_A = CellIsRule(operator='equal', formula=['"A"'], stopIfTrue=True, fill=PatternFill(start_color="FFFFCC00", end_color="FFFFCC00", fill_type="solid"), font=white_bold_font)
-    
-    letter_grade_range = f"O3:O{first_sheet_last_row}"
-    first_sheet.conditional_formatting.add(letter_grade_range, rule_F)
-    first_sheet.conditional_formatting.add(letter_grade_range, rule_C)
-    first_sheet.conditional_formatting.add(letter_grade_range, rule_B)
-    first_sheet.conditional_formatting.add(letter_grade_range, rule_A)
+    # Harf Notu Renkleri (ARGB formatı ile güncellendi)
+    white_bold = Font(color="FFFFFF", bold=True)
+    grades = {"F": "FFCC0000", "C": "FF4E8542", "B": "FF1B587C", "A": "FFFFCC00"}
+    for grade, color in grades.items():
+        first_sheet.conditional_formatting.add(f"O3:O{first_sheet_last_row}", CellIsRule(operator='equal', formula=[f'"{grade}"'], stopIfTrue=True, fill=PatternFill(start_color=color, end_color=color, fill_type="solid"), font=white_bold))
         
     output = io.BytesIO()
     wb.save(output)
@@ -323,53 +267,27 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     return output.read()
 
 st.title("Excel Gradebook Generator")
-
 class_lists_file = st.file_uploader("Class Lists (Excel)", type=["xlsx"])
-module_name = st.text_input("Module Name (e.g., Module 3)", value="Module 3")
-
-st.subheader("Gradebook Templates")
-col1, col2 = st.columns(2)
-with col1:
-    a1_template = st.file_uploader("A1 Gradebook", type=["xltx", "xlsx"])
-    a2_template = st.file_uploader("A2 Gradebook", type=["xltx", "xlsx"])
-with col2:
-    b1_template = st.file_uploader("B1 Gradebook", type=["xltx", "xlsx"])
-    b2_template = st.file_uploader("B2 Gradebook", type=["xltx", "xlsx"])
+module_name = st.text_input("Module Name", value="Module 3")
+a1_t = st.file_uploader("A1 Gradebook", type=["xlsx", "xltx"])
+a2_t = st.file_uploader("A2 Gradebook", type=["xlsx", "xltx"])
+b1_t = st.file_uploader("B1 Gradebook", type=["xlsx", "xltx"])
+b2_t = st.file_uploader("B2 Gradebook", type=["xlsx", "xltx"])
 
 if st.button("Generate Gradebooks"):
-    templates = {
-        "A1": a1_template,
-        "A2": a2_template,
-        "B1": b1_template,
-        "B2": b2_template
-    }
-    
-    if not class_lists_file:
-        st.error("Lütfen Class Lists dosyasını yükleyin.")
+    templates = {"A1": a1_t, "A2": a2_t, "B1": b1_t, "B2": b2_t}
+    if not class_lists_file: st.error("Class Lists eksik.")
     else:
-        with st.spinner("Dosyalar oluşturuluyor..."):
+        with st.spinner("İşleniyor..."):
             class_wb = openpyxl.load_workbook(class_lists_file, data_only=True)
-            
             zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            with zipfile.ZipFile(zip_buffer, "w") as zf:
                 for sheet_name in class_wb.sheetnames:
                     level = sheet_name.split(".")[0]
-                    
                     if level in templates and templates[level]:
-                        ws = class_wb[sheet_name]
-                        students, advisor_name = get_class_info_from_sheet(ws)
-                        
-                        if not students:
-                            continue
-                            
-                        file_data = process_class_template(templates[level].getvalue(), sheet_name, students, module_name, advisor_name)
-                        zip_file.writestr(f"{level}/{sheet_name} Gradebook.xlsx", file_data)
-
-            zip_buffer.seek(0)
-            st.success("Tüm Gradebook dosyaları başarıyla oluşturuldu!")
-            st.download_button(
-                label="Oluşturulan Dosyaları İndir (ZIP)",
-                data=zip_buffer,
-                file_name="Gradebooks.zip",
-                mime="application/zip"
-            )
+                        students, advisor = get_class_info_from_sheet(class_wb[sheet_name])
+                        if not students: continue
+                        file_data = process_class_template(templates[level].getvalue(), sheet_name, students, module_name, advisor)
+                        zf.writestr(f"{level}/{sheet_name} Gradebook.xlsx", file_data)
+            st.success("Hazır!")
+            st.download_button("İndir (ZIP)", zip_buffer.getvalue(), "Gradebooks.zip", "application/zip")
