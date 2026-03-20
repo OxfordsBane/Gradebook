@@ -2,9 +2,9 @@ import streamlit as st
 import openpyxl
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.cell_range import MultiCellRange
-from openpyxl.formatting.rule import Rule, IconSet, FormatObject
+from openpyxl.formatting.rule import Rule, IconSet, FormatObject, CellIsRule
 import re
 import io
 import zipfile
@@ -36,11 +36,6 @@ def get_class_info_from_sheet(sheet):
     return students, advisor_name
 
 def get_template_student_rows(wb, sheet_idx, start_row=3):
-    """
-    1. Önce Excel Tablo sınırlarına bakar (En garantili yöntem).
-    2. Bulamazsa A sütunundaki rakamları sayar.
-    3. O da yoksa İlk sayfanın verisini standart kabul eder (A1 Standardı).
-    """
     ws = wb.worksheets[sheet_idx]
     
     for table in ws.tables.values():
@@ -91,8 +86,6 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         ws.insert_rows(action_row_idx, amount=rows_to_add)
         offset = rows_to_add
         
-        # STİL KORUMA: Eklenen satırlara KESİNLİKLE 3. satırın (beyaz/gri öğrenci satırı) stili kopyalanır.
-        # Bu sayede mavi satırın rengi asla yukarı taşmaz.
         for r in range(action_row_idx, action_row_idx + rows_to_add):
             for col in range(1, ws.max_column + 1):
                 source_cell = ws.cell(row=start_row, column=col)
@@ -133,58 +126,8 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
                 except:
                     target_cell.value = master_cell.value
 
-    # Mavi Alandaki tüm eski Conditional Formatting kurallarını temizleme
     if hasattr(ws.conditional_formatting, '_cf_rules'):
-        cfs = []
-        for sqref, rules in ws.conditional_formatting._cf_rules.items():
-            if hasattr(sqref, 'ranges'):
-                sqref_str = " ".join([rng.coord for rng in sqref.ranges])
-            else:
-                sqref_str = str(sqref)
-            sqref_str = sqref_str.replace("<MultiCellRange [", "").replace("]>", "")
-            cfs.append((sqref_str, rules))
-            
         ws.conditional_formatting._cf_rules.clear()
-        
-        for sqref_str, rules in cfs:
-            new_ranges = []
-            for rng in sqref_str.split():
-                match_range = re.match(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$", rng)
-                match_cell = re.match(r"^([A-Z]+)(\d+)$", rng)
-                
-                if match_range:
-                    scol, srow, ecol, erow = match_range.groups()
-                    srow_int, erow_int = int(srow), int(erow)
-                    
-                    if srow_int > original_last_student_row:
-                        continue 
-                        
-                    if srow_int <= start_row and erow_int >= start_row:
-                        new_ranges.append(f"{scol}{start_row}:{ecol}{last_student_row}")
-                    else:
-                        new_ranges.append(rng)
-                        
-                elif match_cell:
-                    col, row = match_cell.groups()
-                    row_int = int(row)
-                    
-                    if row_int > original_last_student_row:
-                        continue
-                        
-                    if row_int == start_row:
-                        new_ranges.append(f"{col}{start_row}:{col}{last_student_row}")
-                    else:
-                        new_ranges.append(rng)
-                else:
-                    new_ranges.append(rng)
-            
-            if new_ranges:
-                new_sqref_str = " ".join(new_ranges)
-                for rule in rules:
-                    try:
-                        ws.conditional_formatting.add(new_sqref_str, rule)
-                    except:
-                        pass
 
     return last_student_row 
 
@@ -192,12 +135,16 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
     wb.template = False 
     
+    first_sheet_last_row = 3
+    
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
-        # Her sayfanın orijinal satır sayısını o sayfaya özel olarak ve hatasız tespit et
         template_student_rows = get_template_student_rows(wb, i, start_row=3)
         last_student_row = adjust_template_rows_and_tables(ws, len(students), template_student_rows)
         
+        if i == 0:
+            first_sheet_last_row = last_student_row
+            
         if i > 0:
             cfvo1 = FormatObject(type='num', val=0)   
             cfvo2 = FormatObject(type='num', val=45)  
@@ -239,6 +186,20 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         first_sheet.cell(row=start_row + i, column=2, value=student["number"])
         first_sheet.cell(row=start_row + i, column=3, value=student["name"])
         first_sheet.cell(row=start_row + i, column=4, value=student["surname"])
+        
+    # --- YENİ EKLENEN KISIM: İLK SAYFA O SÜTUNU HARF NOTU RENKLENDİRMESİ ---
+    white_bold_font = Font(color="FFFFFF", bold=True)
+    
+    rule_F = CellIsRule(operator='equal', formula=['"F"'], stopIfTrue=True, fill=PatternFill(start_color="CC0000", end_color="CC0000", fill_type="solid"), font=white_bold_font)
+    rule_C = CellIsRule(operator='equal', formula=['"C"'], stopIfTrue=True, fill=PatternFill(start_color="4E8542", end_color="4E8542", fill_type="solid"), font=white_bold_font)
+    rule_B = CellIsRule(operator='equal', formula=['"B"'], stopIfTrue=True, fill=PatternFill(start_color="1B587C", end_color="1B587C", fill_type="solid"), font=white_bold_font)
+    rule_A = CellIsRule(operator='equal', formula=['"A"'], stopIfTrue=True, fill=PatternFill(start_color="FFCC00", end_color="FFCC00", fill_type="solid"), font=white_bold_font)
+    
+    letter_grade_range = f"O3:O{first_sheet_last_row}"
+    first_sheet.conditional_formatting.add(letter_grade_range, rule_F)
+    first_sheet.conditional_formatting.add(letter_grade_range, rule_C)
+    first_sheet.conditional_formatting.add(letter_grade_range, rule_B)
+    first_sheet.conditional_formatting.add(letter_grade_range, rule_A)
         
     output = io.BytesIO()
     wb.save(output)
