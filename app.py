@@ -125,6 +125,10 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
                     target_cell.value = Translator(master_cell.value, origin=master_cell.coordinate).translate_formula(target_cell.coordinate)
                 except:
                     target_cell.value = master_cell.value
+                    
+            target_cell.fill = PatternFill(fill_type=None)
+            if target_cell.font:
+                target_cell.font = Font(name=target_cell.font.name, size=target_cell.font.size, bold=target_cell.font.bold, italic=target_cell.font.italic)
 
     if hasattr(ws.conditional_formatting, '_cf_rules'):
         ws.conditional_formatting._cf_rules.clear()
@@ -187,7 +191,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         first_sheet.cell(row=start_row + i, column=3, value=student["name"])
         first_sheet.cell(row=start_row + i, column=4, value=student["surname"])
         
-    # --- YENİ EKLENEN KISIM: İLK SAYFA O SÜTUNU HARF NOTU RENKLENDİRMESİ ---
     white_bold_font = Font(color="FFFFFF", bold=True)
     
     rule_F = CellIsRule(operator='equal', formula=['"F"'], stopIfTrue=True, fill=PatternFill(start_color="CC0000", end_color="CC0000", fill_type="solid"), font=white_bold_font)
