@@ -75,7 +75,7 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
     start_row = 3
     original_last_student_row = start_row + current_rows - 1
     
-    # --- SINIR (BORDER) HAFIZAYA ALMA ---
+    # --- GELİŞTİRİLMİŞ AKILLI ÇERÇEVE HAFIZASI (Görünmez Çizgi Düzeltici) ---
     original_top_borders = []
     original_bottom_borders = []
     internal_horizontal_borders = []
@@ -85,14 +85,19 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         cell_first = ws.cell(row=start_row, column=c)
         cell_last = ws.cell(row=original_last_student_row, column=c)
         
-        original_top_borders.append(cell_first.border.top if cell_first.border else None)
-        original_bottom_borders.append(cell_last.border.bottom if cell_last.border else None)
+        b_top = cell_first.border.top if cell_first.border else None
+        b_bot = cell_last.border.bottom if cell_last.border else None
+        
+        original_top_borders.append(b_top if b_top and b_top.style else default_thin)
+        original_bottom_borders.append(b_bot if b_bot and b_bot.style else default_thin)
         
         if current_rows > 1:
-            internal_horizontal_borders.append(cell_first.border.bottom if cell_first.border else default_thin)
+            b_mid = cell_first.border.bottom if cell_first.border else None
+            # Eğer şablonda yatay çizgi stili "Yok" ise, otomatik olarak ince çizgiye (thin) çevir
+            internal_horizontal_borders.append(b_mid if b_mid and b_mid.style else default_thin)
         else:
             internal_horizontal_borders.append(default_thin)
-    
+            
     action_row_idx = start_row + (current_rows // 2)
     if action_row_idx <= start_row:
         action_row_idx = start_row + 1
@@ -132,11 +137,10 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
-    # --- AKILLI ÇERÇEVE (BORDER) TEMİZLİĞİ ---
+    # --- ÇERÇEVE (BORDER) RESTORASYONU ---
     for r in range(start_row, last_student_row + 1):
         for c in range(1, ws.max_column + 1):
             target_cell = ws.cell(row=r, column=c)
-            
             b_left = target_cell.border.left if target_cell.border else None
             b_right = target_cell.border.right if target_cell.border else None
             
@@ -155,7 +159,6 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
                 
             target_cell.border = Border(left=b_left, right=b_right, top=b_top, bottom=b_bottom)
 
-    # --- Temizlik ---
     for col in range(5, ws.max_column + 1):
         master_cell = ws.cell(row=start_row, column=col)
         if master_cell.data_type != 'f':
@@ -208,12 +211,50 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
             first_sheet_last_row = last_student_row
             
         if i > 0:
+            # --- B1 ÖZEL: KALIN BLOK ÇERÇEVE (THICK BORDER) UYGULAMASI ---
+            if level_prefix == "B1" and sheet_name.lower() in ["midterm", "met"]:
+                thick_side = Side(border_style="medium", color="000000")
+                thin_side = Side(border_style="thin", color="000000")
+                
+                thick_cols = []
+                if sheet_name.lower() == "midterm":
+                    thick_cols = [5, 9, 14, 19, 24] # E, I, N, S, X
+                elif sheet_name.lower() == "met":
+                    thick_cols = [5, 9, 15, 20, 25, 30] # E, I, O, T, Y, AD
+                    
+                for r in range(start_row, last_student_row + 1):
+                    for c in range(5, ws.max_column + 1):
+                        target_cell = ws.cell(row=r, column=c)
+                        current_b = target_cell.border
+                        
+                        b_top = current_b.top if current_b and current_b.top and current_b.top.style else thin_side
+                        b_bottom = current_b.bottom if current_b and current_b.bottom and current_b.bottom.style else thin_side
+                        
+                        if r > start_row:
+                            b_top = thin_side
+                        if r < last_student_row:
+                            b_bottom = thin_side
+                            
+                        b_left = thin_side
+                        b_right = thin_side
+                        
+                        # Eğer bu sütun özel "Section Total" sütunuysa, dış çerçeveyi kalın yap
+                        if c in thick_cols:
+                            b_left = thick_side
+                            b_right = thick_side
+                            if r == start_row:
+                                b_top = thick_side
+                            if r == last_student_row:
+                                b_bottom = thick_side
+                                
+                        target_cell.border = Border(top=b_top, bottom=b_bottom, left=b_left, right=b_right)
+
+            # --- KOŞULLU BİÇİMLENDİRMELER ---
             cfvo1 = FormatObject(type='num', val=0)   
             cfvo2 = FormatObject(type='num', val=45)  
             cfvo3 = FormatObject(type='num', val=60)  
             cfvo4 = FormatObject(type='num', val=70)  
             cfvo5 = FormatObject(type='num', val=85)  
-            
             icon_set = IconSet(iconSet='5Arrows', cfvo=[cfvo1, cfvo2, cfvo3, cfvo4, cfvo5])
             rule = Rule(type='iconSet', iconSet=icon_set)
             ws.conditional_formatting.add(f"E3:E{last_student_row}", rule)
