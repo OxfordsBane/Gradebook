@@ -2,8 +2,9 @@ import streamlit as st
 import openpyxl
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
-from openpyxl.styles import Font, PatternFill, Border, Side, Protection
+from openpyxl.styles import Font, PatternFill, Border, Side
 from openpyxl.formatting.rule import Rule, IconSet, FormatObject, CellIsRule, FormulaRule
+from openpyxl.workbook.protection import WorkbookProtection
 import re
 import io
 import zipfile
@@ -191,7 +192,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet_last_row = 3
     level_prefix = class_name.split(".")[0].upper()
     
-    # Seviye Şifreleri
     passwords = {
         "A1": "Esra",
         "A2": "Ceren",
@@ -217,7 +217,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
             first_sheet_last_row = last_student_row
             
         if i > 0:
-            # --- B1 ÖZEL ÇERÇEVE ---
             if level_prefix == "B1" and sheet_name.lower() in ["midterm", "met"]:
                 thick_side = Side(border_style="medium", color="000000")
                 thin_side = Side(border_style="thin", color="000000")
@@ -254,31 +253,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                                 
                         target_cell.border = Border(top=b_top, bottom=b_bottom, left=b_left, right=b_right)
 
-            # --- SÜTUN KORUMA / İZİN MANTIĞI ---
-            if sheet_name.lower() in ["midterm", "met"]:
-                cols_to_unlock = []
-                
-                # MidTerm (Tüm seviyeler) VEYA MET (Sadece A1)
-                if sheet_name.lower() == "midterm" or (sheet_name.lower() == "met" and level_prefix == "A1"):
-                    # 1st: O(15), P(16), Q(17), R(18) | 2nd: T(20), U(21), V(22), W(23) | 3rd: Y(25), Z(26), AA(27), AB(28)
-                    cols_to_unlock = [15, 16, 17, 18, 20, 21, 22, 23, 25, 26, 27, 28]
-                
-                # MET (A2, B1, B2)
-                elif sheet_name.lower() == "met" and level_prefix in ["A2", "B1", "B2"]:
-                    # 1st: U(21), V(22), W(23), X(24) | 2nd: Z(26), AA(27), AB(28), AC(29) | 3rd: AE(31), AF(32), AG(33), AH(34)
-                    cols_to_unlock = [21, 22, 23, 24, 26, 27, 28, 29, 31, 32, 33, 34]
-                
-                # Sadece ilgili sütunlardaki hücrelerin kilitlerini (locked=False) aç
-                for r in range(start_row, last_student_row + 1):
-                    for c in cols_to_unlock:
-                        ws.cell(row=r, column=c).protection = Protection(locked=False)
-                
-                # Sayfayı belirtilen şifre ile korumaya al (Geri kalan her şey kilitli kalır)
-                ws.protection.sheet = True
-                pwd = passwords.get(level_prefix, "1234")
-                ws.protection.set_password(pwd)
-
-            # --- KOŞULLU BİÇİMLENDİRMELER ---
             cfvo1 = FormatObject(type='num', val=0)   
             cfvo2 = FormatObject(type='num', val=45)  
             cfvo3 = FormatObject(type='num', val=60)  
@@ -384,6 +358,13 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     grades = {"F": "FFCC0000", "C": "FF4E8542", "B": "FF1B587C", "A": "FFFFCC00"}
     for grade, color in grades.items():
         first_sheet.conditional_formatting.add(f"O3:O{first_sheet_last_row}", CellIsRule(operator='equal', formula=[f'"{grade}"'], stopIfTrue=True, fill=PatternFill(start_color=color, end_color=color, fill_type="solid"), font=white_bold))
+        
+    pwd = passwords.get(level_prefix, "1234")
+    for ws_to_protect in wb.worksheets:
+        ws_to_protect.protection.sheet = True
+        ws_to_protect.protection.set_password(pwd)
+        
+    wb.security = WorkbookProtection(lockStructure=True)
         
     output = io.BytesIO()
     wb.save(output)
