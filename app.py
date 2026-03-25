@@ -75,7 +75,6 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
     start_row = 3
     original_last_student_row = start_row + current_rows - 1
     
-    # --- GELİŞTİRİLMİŞ AKILLI ÇERÇEVE HAFIZASI (Görünmez Çizgi Düzeltici) ---
     original_top_borders = []
     original_bottom_borders = []
     internal_horizontal_borders = []
@@ -93,7 +92,6 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         
         if current_rows > 1:
             b_mid = cell_first.border.bottom if cell_first.border else None
-            # Eğer şablonda yatay çizgi stili "Yok" ise, otomatik olarak ince çizgiye (thin) çevir
             internal_horizontal_borders.append(b_mid if b_mid and b_mid.style else default_thin)
         else:
             internal_horizontal_borders.append(default_thin)
@@ -137,7 +135,6 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
-    # --- ÇERÇEVE (BORDER) RESTORASYONU ---
     for r in range(start_row, last_student_row + 1):
         for c in range(1, ws.max_column + 1):
             target_cell = ws.cell(row=r, column=c)
@@ -190,6 +187,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
     wb.template = False 
     
+    start_row = 3
     first_sheet_last_row = 3
     level_prefix = class_name.split(".")[0].upper()
     
@@ -204,23 +202,22 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
-        template_student_rows = get_template_student_rows(wb, i, start_row=3)
+        template_student_rows = get_template_student_rows(wb, i, start_row)
         last_student_row = adjust_template_rows_and_tables(ws, len(students), template_student_rows)
         
         if i == 0:
             first_sheet_last_row = last_student_row
             
         if i > 0:
-            # --- B1 ÖZEL: KALIN BLOK ÇERÇEVE (THICK BORDER) UYGULAMASI ---
             if level_prefix == "B1" and sheet_name.lower() in ["midterm", "met"]:
                 thick_side = Side(border_style="medium", color="000000")
                 thin_side = Side(border_style="thin", color="000000")
                 
                 thick_cols = []
                 if sheet_name.lower() == "midterm":
-                    thick_cols = [5, 9, 14, 19, 24] # E, I, N, S, X
+                    thick_cols = [5, 9, 14, 19, 24] 
                 elif sheet_name.lower() == "met":
-                    thick_cols = [5, 9, 15, 20, 25, 30] # E, I, O, T, Y, AD
+                    thick_cols = [5, 9, 15, 20, 25, 30] 
                     
                 for r in range(start_row, last_student_row + 1):
                     for c in range(5, ws.max_column + 1):
@@ -238,7 +235,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                         b_left = thin_side
                         b_right = thin_side
                         
-                        # Eğer bu sütun özel "Section Total" sütunuysa, dış çerçeveyi kalın yap
                         if c in thick_cols:
                             b_left = thick_side
                             b_right = thick_side
@@ -249,12 +245,12 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                                 
                         target_cell.border = Border(top=b_top, bottom=b_bottom, left=b_left, right=b_right)
 
-            # --- KOŞULLU BİÇİMLENDİRMELER ---
             cfvo1 = FormatObject(type='num', val=0)   
             cfvo2 = FormatObject(type='num', val=45)  
             cfvo3 = FormatObject(type='num', val=60)  
             cfvo4 = FormatObject(type='num', val=70)  
             cfvo5 = FormatObject(type='num', val=85)  
+            
             icon_set = IconSet(iconSet='5Arrows', cfvo=[cfvo1, cfvo2, cfvo3, cfvo4, cfvo5])
             rule = Rule(type='iconSet', iconSet=icon_set)
             ws.conditional_formatting.add(f"E3:E{last_student_row}", rule)
@@ -330,7 +326,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         if advisor_found:
             break
     
-    start_row = 3
     for i, student in enumerate(students):
         first_sheet.cell(row=start_row + i, column=1, value=student["index"])
         first_sheet.cell(row=start_row + i, column=2, value=student["number"])
