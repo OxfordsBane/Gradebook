@@ -2,7 +2,7 @@ import streamlit as st
 import openpyxl
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Font, PatternFill, Border, Side
 from openpyxl.formatting.rule import Rule, IconSet, FormatObject, CellIsRule, FormulaRule
 import re
 import io
@@ -75,6 +75,24 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
     start_row = 3
     original_last_student_row = start_row + current_rows - 1
     
+    # --- SINIR (BORDER) HAFIZAYA ALMA ---
+    original_top_borders = []
+    original_bottom_borders = []
+    internal_horizontal_borders = []
+    default_thin = Side(border_style="thin", color="000000")
+    
+    for c in range(1, ws.max_column + 1):
+        cell_first = ws.cell(row=start_row, column=c)
+        cell_last = ws.cell(row=original_last_student_row, column=c)
+        
+        original_top_borders.append(cell_first.border.top if cell_first.border else None)
+        original_bottom_borders.append(cell_last.border.bottom if cell_last.border else None)
+        
+        if current_rows > 1:
+            internal_horizontal_borders.append(cell_first.border.bottom if cell_first.border else default_thin)
+        else:
+            internal_horizontal_borders.append(default_thin)
+    
     action_row_idx = start_row + (current_rows // 2)
     if action_row_idx <= start_row:
         action_row_idx = start_row + 1
@@ -114,6 +132,30 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         new_table_max_row = last_student_row + table_offset
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
+    # --- AKILLI ÇERÇEVE (BORDER) TEMİZLİĞİ ---
+    for r in range(start_row, last_student_row + 1):
+        for c in range(1, ws.max_column + 1):
+            target_cell = ws.cell(row=r, column=c)
+            
+            b_left = target_cell.border.left if target_cell.border else None
+            b_right = target_cell.border.right if target_cell.border else None
+            
+            if r == start_row and r == last_student_row:
+                b_top = original_top_borders[c-1]
+                b_bottom = original_bottom_borders[c-1]
+            elif r == start_row:
+                b_top = original_top_borders[c-1]
+                b_bottom = internal_horizontal_borders[c-1]
+            elif r == last_student_row:
+                b_top = internal_horizontal_borders[c-1]
+                b_bottom = original_bottom_borders[c-1]
+            else:
+                b_top = internal_horizontal_borders[c-1]
+                b_bottom = internal_horizontal_borders[c-1]
+                
+            target_cell.border = Border(left=b_left, right=b_right, top=b_top, bottom=b_bottom)
+
+    # --- Temizlik ---
     for col in range(5, ws.max_column + 1):
         master_cell = ws.cell(row=start_row, column=col)
         if master_cell.data_type != 'f':
@@ -148,13 +190,11 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet_last_row = 3
     level_prefix = class_name.split(".")[0].upper()
     
-    # 1. Siyah dolgu ve beyaz/kalın/altı çizili font kuralı (Fark > 6)
     black_fill = PatternFill(start_color="FF000000", end_color="FF000000", fill_type="solid")
     white_bold_underline_font = Font(color="FFFFFF", bold=True, underline="single")
     rule_diff_ns = FormulaRule(formula=['ABS($N3-$S3)>6'], stopIfTrue=False, fill=black_fill, font=white_bold_underline_font)
     rule_diff_ty = FormulaRule(formula=['ABS($T3-$Y3)>6'], stopIfTrue=False, fill=black_fill, font=white_bold_underline_font)
     
-    # 2. Mavi dolgu ve beyaz/kalın font kuralı (Değer > 0)
     blue_fill_x = PatternFill(start_color="FF1B587C", end_color="FF1B587C", fill_type="solid")
     white_bold_font_x = Font(color="FFFFFF", bold=True)
     rule_greater_zero = CellIsRule(operator='greaterThan', formula=['0'], stopIfTrue=False, fill=blue_fill_x, font=white_bold_font_x)
@@ -190,13 +230,11 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                 icon_set_ns = IconSet(iconSet='5Arrows', cfvo=cfvo_ns)
                 rule_arrows_ns = Rule(type='iconSet', iconSet=icon_set_ns)
                 
-                # Önce DOLGU kuralı, sonra OK kuralı
                 ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_diff_ns)
                 ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
                 ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_arrows_ns)
                 ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_arrows_ns)
                 
-                # Yeni Kural: X sütunu (Değer > 0)
                 ws.conditional_formatting.add(f"X3:X{last_student_row}", rule_greater_zero)
 
             elif sheet_name.lower() == "met":
@@ -209,8 +247,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                     ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
                     ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_arrows_met)
                     ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_arrows_met)
-                    
-                    # Yeni Kural: A1 seviyesi MET sayfası X sütunu (Değer > 0)
                     ws.conditional_formatting.add(f"X3:X{last_student_row}", rule_greater_zero)
                     
                 elif level_prefix in ["A2", "B1", "B2"]:
@@ -218,8 +254,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                     ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_diff_ty)
                     ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_arrows_met)
                     ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_arrows_met)
-                    
-                    # Yeni Kural: A2, B1, B2 seviyesi MET sayfası AD sütunu (Değer > 0)
                     ws.conditional_formatting.add(f"AD3:AD{last_student_row}", rule_greater_zero)
                     
                     if level_prefix == "A2":
@@ -241,7 +275,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     else:
         first_sheet["A1"].font = Font(size=20, bold=True)
         
-    # Diğer sayfaların A1 hücrelerini ilk sayfaya referans verme işlemi
     first_sheet_name = first_sheet.title
     for i in range(1, len(wb.worksheets)):
         wb.worksheets[i]["A1"].value = f"='{first_sheet_name}'!A1"
