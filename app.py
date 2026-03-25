@@ -148,13 +148,16 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet_last_row = 3
     level_prefix = class_name.split(".")[0].upper()
     
-    # Siyah dolgu için ARGB formatı (FF000000)
+    # 1. Siyah dolgu ve beyaz/kalın/altı çizili font kuralı (Fark > 6)
     black_fill = PatternFill(start_color="FF000000", end_color="FF000000", fill_type="solid")
     white_bold_underline_font = Font(color="FFFFFF", bold=True, underline="single")
-    
-    # stopIfTrue=False: Siyah boyama yapıldıktan sonra alttaki ikon kuralını da çalıştırır
     rule_diff_ns = FormulaRule(formula=['ABS($N3-$S3)>6'], stopIfTrue=False, fill=black_fill, font=white_bold_underline_font)
     rule_diff_ty = FormulaRule(formula=['ABS($T3-$Y3)>6'], stopIfTrue=False, fill=black_fill, font=white_bold_underline_font)
+    
+    # 2. Mavi dolgu ve beyaz/kalın font kuralı (Değer > 0)
+    blue_fill_x = PatternFill(start_color="FF1B587C", end_color="FF1B587C", fill_type="solid")
+    white_bold_font_x = Font(color="FFFFFF", bold=True)
+    rule_greater_zero = CellIsRule(operator='greaterThan', formula=['0'], stopIfTrue=False, fill=blue_fill_x, font=white_bold_font_x)
     
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
@@ -187,11 +190,14 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                 icon_set_ns = IconSet(iconSet='5Arrows', cfvo=cfvo_ns)
                 rule_arrows_ns = Rule(type='iconSet', iconSet=icon_set_ns)
                 
-                # Önce DOLGU kuralını, sonra OK kuralını ekliyoruz
+                # Önce DOLGU kuralı, sonra OK kuralı
                 ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_diff_ns)
                 ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
                 ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_arrows_ns)
                 ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_arrows_ns)
+                
+                # Yeni Kural: X sütunu (Değer > 0)
+                ws.conditional_formatting.add(f"X3:X{last_student_row}", rule_greater_zero)
 
             elif sheet_name.lower() == "met":
                 cfvo_met = [FormatObject(type='num', val=v) for v in [0, 8, 16, 24, 32]]
@@ -203,11 +209,18 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                     ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
                     ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_arrows_met)
                     ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_arrows_met)
+                    
+                    # Yeni Kural: A1 seviyesi MET sayfası X sütunu (Değer > 0)
+                    ws.conditional_formatting.add(f"X3:X{last_student_row}", rule_greater_zero)
+                    
                 elif level_prefix in ["A2", "B1", "B2"]:
                     ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_diff_ty)
                     ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_diff_ty)
                     ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_arrows_met)
                     ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_arrows_met)
+                    
+                    # Yeni Kural: A2, B1, B2 seviyesi MET sayfası AD sütunu (Değer > 0)
+                    ws.conditional_formatting.add(f"AD3:AD{last_student_row}", rule_greater_zero)
                     
                     if level_prefix == "A2":
                         cfvo_io = [FormatObject(type='num', val=v) for v in [0, 3, 6, 9, 12]]
@@ -221,7 +234,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet = wb.worksheets[0]
     first_sheet.title = class_name
     
-    # 1. İlk sayfanın A1 hücresini oluştur
     first_sheet["A1"] = f"{class_name} - {module_name}"
     current_font = first_sheet["A1"].font
     if current_font:
@@ -229,7 +241,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     else:
         first_sheet["A1"].font = Font(size=20, bold=True)
         
-    # 2. NET REFERANS UYGULAMASI: Diğer tüm sayfaların A1'i, kesinlikle ilk sayfaya bağlı
+    # Diğer sayfaların A1 hücrelerini ilk sayfaya referans verme işlemi
     first_sheet_name = first_sheet.title
     for i in range(1, len(wb.worksheets)):
         wb.worksheets[i]["A1"].value = f"='{first_sheet_name}'!A1"
