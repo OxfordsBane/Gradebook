@@ -4,7 +4,7 @@ from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
 from openpyxl.styles import Font, PatternFill, Border, Side
 from openpyxl.formatting.rule import Rule, IconSet, FormatObject, CellIsRule, FormulaRule
-from openpyxl.workbook.protection import WorkbookProtection
+from openpyxl.workbook.protection import WorkbookProtection, FileSharing
 import re
 import io
 import zipfile
@@ -186,7 +186,16 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
 
 def process_class_template(template_bytes, class_name, students, module_name, advisor_name):
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
+    
+    # --- SALT OKUNUR (READ-ONLY) ENGELLEYİCİ ---
     wb.template = False 
+    try:
+        if hasattr(wb, 'file_sharing'):
+            wb.file_sharing = FileSharing(readOnlyRecommended=False)
+        else:
+            wb.file_sharing = FileSharing(readOnlyRecommended=False)
+    except:
+        pass
     
     start_row = 3
     first_sheet_last_row = 3
@@ -359,6 +368,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     for grade, color in grades.items():
         first_sheet.conditional_formatting.add(f"O3:O{first_sheet_last_row}", CellIsRule(operator='equal', formula=[f'"{grade}"'], stopIfTrue=True, fill=PatternFill(start_color=color, end_color=color, fill_type="solid"), font=white_bold))
         
+    # --- SAYFA VE ÇALIŞMA KİTABI (WORKBOOK) ŞİFRELEME ---
     pwd = passwords.get(level_prefix, "1234")
     for ws_to_protect in wb.worksheets:
         ws_to_protect.protection.sheet = True
