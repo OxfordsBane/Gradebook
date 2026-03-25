@@ -2,7 +2,7 @@ import streamlit as st
 import openpyxl
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries, get_column_letter
-from openpyxl.styles import Font, PatternFill, Border, Side
+from openpyxl.styles import Font, PatternFill, Border, Side, Protection
 from openpyxl.formatting.rule import Rule, IconSet, FormatObject, CellIsRule, FormulaRule
 from openpyxl.workbook.protection import WorkbookProtection, FileSharing
 import re
@@ -76,12 +76,27 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
     start_row = 3
     original_last_student_row = start_row + current_rows - 1
     
+    # --- GERÇEK SÜTUN SINIRINI BULMA (HAYALET HÜCRE ENGELLEYİCİ) ---
+    actual_max_col = 1
+    if list(ws.tables.values()):
+        for table in ws.tables.values():
+            min_col, min_row, max_col, max_row = range_boundaries(table.ref)
+            if max_col > actual_max_col:
+                actual_max_col = max_col
+    else:
+        for c in range(ws.max_column, 0, -1):
+            if ws.cell(row=1, column=c).value is not None or ws.cell(row=2, column=c).value is not None:
+                actual_max_col = c
+                break
+        if actual_max_col == 1:
+            actual_max_col = ws.max_column
+
     original_top_borders = []
     original_bottom_borders = []
     internal_horizontal_borders = []
     default_thin = Side(border_style="thin", color="000000")
     
-    for c in range(1, ws.max_column + 1):
+    for c in range(1, actual_max_col + 1):
         cell_first = ws.cell(row=start_row, column=c)
         cell_last = ws.cell(row=original_last_student_row, column=c)
         
@@ -108,7 +123,7 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         offset = rows_to_add
         
         for r in range(action_row_idx, action_row_idx + rows_to_add):
-            for col in range(1, ws.max_column + 1):
+            for col in range(1, actual_max_col + 1):
                 source_cell = ws.cell(row=start_row, column=col)
                 target_cell = ws.cell(row=r, column=col)
                 if source_cell.has_style:
@@ -137,7 +152,7 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
         table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{new_table_max_row}"
 
     for r in range(start_row, last_student_row + 1):
-        for c in range(1, ws.max_column + 1):
+        for c in range(1, actual_max_col + 1):
             target_cell = ws.cell(row=r, column=c)
             b_left = target_cell.border.left if target_cell.border else None
             b_right = target_cell.border.right if target_cell.border else None
@@ -157,13 +172,13 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
                 
             target_cell.border = Border(left=b_left, right=b_right, top=b_top, bottom=b_bottom)
 
-    for col in range(5, ws.max_column + 1):
+    for col in range(5, actual_max_col + 1):
         master_cell = ws.cell(row=start_row, column=col)
         if master_cell.data_type != 'f':
             master_cell.value = None
 
     for r in range(start_row + 1, last_student_row + 1):
-        for col in range(1, ws.max_column + 1):
+        for col in range(1, actual_max_col + 1):
             master_cell = ws.cell(row=start_row, column=col)
             target_cell = ws.cell(row=r, column=col)
             
@@ -182,12 +197,11 @@ def adjust_template_rows_and_tables(ws, num_students, current_rows):
     if hasattr(ws, 'extLst'):
         ws.extLst = None
 
-    return last_student_row 
+    return last_student_row, actual_max_col
 
 def process_class_template(template_bytes, class_name, students, module_name, advisor_name):
     wb = openpyxl.load_workbook(filename=io.BytesIO(template_bytes))
     
-    # --- SALT OKUNUR (READ-ONLY) ENGELLEYİCİ ---
     wb.template = False 
     try:
         if hasattr(wb, 'file_sharing'):
@@ -220,7 +234,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     for i, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
         template_student_rows = get_template_student_rows(wb, i, start_row)
-        last_student_row = adjust_template_rows_and_tables(ws, len(students), template_student_rows)
+        last_student_row, actual_max_col = adjust_template_rows_and_tables(ws, len(students), template_student_rows)
         
         if i == 0:
             first_sheet_last_row = last_student_row
@@ -237,7 +251,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                     thick_cols = [5, 9, 15, 20, 25, 30] 
                     
                 for r in range(start_row, last_student_row + 1):
-                    for c in range(5, ws.max_column + 1):
+                    for c in range(5, actual_max_col + 1):
                         target_cell = ws.cell(row=r, column=c)
                         current_b = target_cell.border
                         
@@ -368,7 +382,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     for grade, color in grades.items():
         first_sheet.conditional_formatting.add(f"O3:O{first_sheet_last_row}", CellIsRule(operator='equal', formula=[f'"{grade}"'], stopIfTrue=True, fill=PatternFill(start_color=color, end_color=color, fill_type="solid"), font=white_bold))
         
-    # --- SAYFA VE ÇALIŞMA KİTABI (WORKBOOK) ŞİFRELEME ---
     pwd = passwords.get(level_prefix, "1234")
     for ws_to_protect in wb.worksheets:
         ws_to_protect.protection.sheet = True
