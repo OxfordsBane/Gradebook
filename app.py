@@ -148,7 +148,7 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     first_sheet_last_row = 3
     level_prefix = class_name.split(".")[0].upper()
     
-    # Siyah dolgu için ARGB (FF000000)
+    # Siyah dolgu için ARGB formatı (FF000000)
     black_fill = PatternFill(start_color="FF000000", end_color="FF000000", fill_type="solid")
     white_bold_underline_font = Font(color="FFFFFF", bold=True, underline="single")
     
@@ -165,18 +165,17 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
             first_sheet_last_row = last_student_row
             
         if i > 0:
-            # Standart 5'li Ok Kuralı
             cfvo1 = FormatObject(type='num', val=0)   
             cfvo2 = FormatObject(type='num', val=45)  
             cfvo3 = FormatObject(type='num', val=60)  
             cfvo4 = FormatObject(type='num', val=70)  
             cfvo5 = FormatObject(type='num', val=85)  
+            
             icon_set = IconSet(iconSet='5Arrows', cfvo=[cfvo1, cfvo2, cfvo3, cfvo4, cfvo5])
             rule = Rule(type='iconSet', iconSet=icon_set)
             ws.conditional_formatting.add(f"E3:E{last_student_row}", rule)
             
             if sheet_name.lower() == "midterm":
-                # I Sütunu (Oranlı Oklar)
                 if level_prefix == "B2":
                     cfvo_i = [FormatObject(type='num', val=v) for v in [0, 6, 12, 18, 24]]
                 else:
@@ -184,12 +183,11 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                 icon_set_mid = IconSet(iconSet='5Arrows', cfvo=cfvo_i)
                 ws.conditional_formatting.add(f"I3:I{last_student_row}", Rule(type='iconSet', iconSet=icon_set_mid))
                 
-                # N ve S Sütunları (32 üzerinden Oklar)
                 cfvo_ns = [FormatObject(type='num', val=v) for v in [0, 8, 16, 24, 32]]
                 icon_set_ns = IconSet(iconSet='5Arrows', cfvo=cfvo_ns)
                 rule_arrows_ns = Rule(type='iconSet', iconSet=icon_set_ns)
                 
-                # Önce DOLGU kuralını, sonra OK kuralını ekliyoruz (Görünürlük için)
+                # Önce DOLGU kuralını, sonra OK kuralını ekliyoruz
                 ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_diff_ns)
                 ws.conditional_formatting.add(f"S3:S{last_student_row}", rule_diff_ns)
                 ws.conditional_formatting.add(f"N3:N{last_student_row}", rule_arrows_ns)
@@ -211,7 +209,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
                     ws.conditional_formatting.add(f"T3:T{last_student_row}", rule_arrows_met)
                     ws.conditional_formatting.add(f"Y3:Y{last_student_row}", rule_arrows_met)
                     
-                    # I ve O Sütunları (Oranlı Oklar)
                     if level_prefix == "A2":
                         cfvo_io = [FormatObject(type='num', val=v) for v in [0, 3, 6, 9, 12]]
                     else:
@@ -223,16 +220,29 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         
     first_sheet = wb.worksheets[0]
     first_sheet.title = class_name
-    first_sheet["A1"] = f"{class_name} - {module_name}"
     
-    # Advisor ve Öğrenci listesi işlemleri (Aynı kaldı)
+    # 1. İlk sayfanın A1 hücresini oluştur
+    first_sheet["A1"] = f"{class_name} - {module_name}"
+    current_font = first_sheet["A1"].font
+    if current_font:
+        first_sheet["A1"].font = Font(name=current_font.name, size=20, bold=current_font.bold, italic=current_font.italic, color=current_font.color)
+    else:
+        first_sheet["A1"].font = Font(size=20, bold=True)
+        
+    # 2. NET REFERANS UYGULAMASI: Diğer tüm sayfaların A1'i, kesinlikle ilk sayfaya bağlı
+    first_sheet_name = first_sheet.title
+    for i in range(1, len(wb.worksheets)):
+        wb.worksheets[i]["A1"].value = f"='{first_sheet_name}'!A1"
+    
     advisor_found = False
     for row in first_sheet.iter_rows():
         for cell in row:
             if cell.value and isinstance(cell.value, str) and "Advisor" in cell.value:
                 cell.value = f"Advisor: {advisor_name}"
-                advisor_found = True; break
-        if advisor_found: break
+                advisor_found = True
+                break
+        if advisor_found:
+            break
     
     start_row = 3
     for i, student in enumerate(students):
@@ -241,10 +251,10 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
         first_sheet.cell(row=start_row + i, column=3, value=student["name"])
         first_sheet.cell(row=start_row + i, column=4, value=student["surname"])
         
-    # Ana Sayfa Koşullu Biçimlendirmeler
     cfvo_main = [FormatObject(type='num', val=v) for v in [0, 45, 60, 70, 85]]
     icon_set_main = IconSet(iconSet='5Arrows', cfvo=cfvo_main)
     rule_arrows_main = Rule(type='iconSet', iconSet=icon_set_main)
+    
     first_sheet.conditional_formatting.add(f"E3:E{first_sheet_last_row}", rule_arrows_main)
     first_sheet.conditional_formatting.add(f"F3:F{first_sheet_last_row}", rule_arrows_main)
     first_sheet.conditional_formatting.add(f"M3:M{first_sheet_last_row}", rule_arrows_main)
@@ -255,7 +265,6 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     cfvo_N = [FormatObject(type='num', val=v) for v in [0, 56.99, 59.5]]
     first_sheet.conditional_formatting.add(f"N3:N{first_sheet_last_row}", Rule(type='iconSet', iconSet=IconSet(iconSet='3Symbols2', cfvo=cfvo_N)))
         
-    # Harf Notu Renkleri (ARGB formatı ile güncellendi)
     white_bold = Font(color="FFFFFF", bold=True)
     grades = {"F": "FFCC0000", "C": "FF4E8542", "B": "FF1B587C", "A": "FFFFCC00"}
     for grade, color in grades.items():
@@ -267,27 +276,53 @@ def process_class_template(template_bytes, class_name, students, module_name, ad
     return output.read()
 
 st.title("Excel Gradebook Generator")
+
 class_lists_file = st.file_uploader("Class Lists (Excel)", type=["xlsx"])
-module_name = st.text_input("Module Name", value="Module 3")
-a1_t = st.file_uploader("A1 Gradebook", type=["xlsx", "xltx"])
-a2_t = st.file_uploader("A2 Gradebook", type=["xlsx", "xltx"])
-b1_t = st.file_uploader("B1 Gradebook", type=["xlsx", "xltx"])
-b2_t = st.file_uploader("B2 Gradebook", type=["xlsx", "xltx"])
+module_name = st.text_input("Module Name (e.g., Module 3)", value="Module 3")
+
+st.subheader("Gradebook Templates")
+col1, col2 = st.columns(2)
+with col1:
+    a1_template = st.file_uploader("A1 Gradebook", type=["xltx", "xlsx"])
+    a2_template = st.file_uploader("A2 Gradebook", type=["xltx", "xlsx"])
+with col2:
+    b1_template = st.file_uploader("B1 Gradebook", type=["xltx", "xlsx"])
+    b2_template = st.file_uploader("B2 Gradebook", type=["xltx", "xlsx"])
 
 if st.button("Generate Gradebooks"):
-    templates = {"A1": a1_t, "A2": a2_t, "B1": b1_t, "B2": b2_t}
-    if not class_lists_file: st.error("Class Lists eksik.")
+    templates = {
+        "A1": a1_template,
+        "A2": a2_template,
+        "B1": b1_template,
+        "B2": b2_template
+    }
+    
+    if not class_lists_file:
+        st.error("Lütfen Class Lists dosyasını yükleyin.")
     else:
-        with st.spinner("İşleniyor..."):
+        with st.spinner("Dosyalar oluşturuluyor..."):
             class_wb = openpyxl.load_workbook(class_lists_file, data_only=True)
+            
             zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zf:
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 for sheet_name in class_wb.sheetnames:
                     level = sheet_name.split(".")[0]
+                    
                     if level in templates and templates[level]:
-                        students, advisor = get_class_info_from_sheet(class_wb[sheet_name])
-                        if not students: continue
-                        file_data = process_class_template(templates[level].getvalue(), sheet_name, students, module_name, advisor)
-                        zf.writestr(f"{level}/{sheet_name} Gradebook.xlsx", file_data)
-            st.success("Hazır!")
-            st.download_button("İndir (ZIP)", zip_buffer.getvalue(), "Gradebooks.zip", "application/zip")
+                        ws = class_wb[sheet_name]
+                        students, advisor_name = get_class_info_from_sheet(ws)
+                        
+                        if not students:
+                            continue
+                            
+                        file_data = process_class_template(templates[level].getvalue(), sheet_name, students, module_name, advisor_name)
+                        zip_file.writestr(f"{level}/{sheet_name} Gradebook.xlsx", file_data)
+
+            zip_buffer.seek(0)
+            st.success("Tüm Gradebook dosyaları başarıyla oluşturuldu!")
+            st.download_button(
+                label="Oluşturulan Dosyaları İndir (ZIP)",
+                data=zip_buffer,
+                file_name="Gradebooks.zip",
+                mime="application/zip"
+            )
